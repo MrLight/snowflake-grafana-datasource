@@ -307,6 +307,7 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 				}
 			}
 		} else {
+			log.DefaultLogger.Info("Snowflake cache hit")
 			frame.UnmarshalJSON(cache_res)
 		}
 	} else {
