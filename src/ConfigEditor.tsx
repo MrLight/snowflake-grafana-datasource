@@ -1,5 +1,5 @@
 import React, { ChangeEvent, PureComponent } from 'react';
-import {  InlineField, Switch, SecretInput, Input, FieldSet } from '@grafana/ui';
+import {  InlineField, InlineSwitch, SecretInput, Input, FieldSet } from '@grafana/ui';
 import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
 import { SnowflakeOptions, SnowflakeSecureOptions } from './types';
 
@@ -10,9 +10,27 @@ interface Props extends DataSourcePluginOptionsEditorProps<SnowflakeOptions> { }
 interface State { }
 
 export class ConfigEditor extends PureComponent<Props, State> {
+
+  componentDidMount() {
+    const { onOptionsChange, options } = this.props;
+    if (options.jsonData.maxOpenConnections === ""){
+      const jsonData = {
+        ...options.jsonData,
+        maxOpenConnections: "100",
+        connectionLifetime: "60",
+        useCaching: true,
+        useCacheByDefault: true,
+        cacheSize: "2048",
+        cacheRetention: "60",
+      };
+      onOptionsChange({ ...options, jsonData });
+    }
+
+  }
+
   onAccountChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { onOptionsChange, options } = this.props;
-
+    
     let value;
     if (event.target.value.includes('.snowflakecomputing.com')) {
       value = event.target.value;
@@ -76,11 +94,11 @@ export class ConfigEditor extends PureComponent<Props, State> {
     onOptionsChange({ ...options, jsonData });
   };
 
-  onAuthenticationChange = (event: React.SyntheticEvent<HTMLInputElement>) => {
+  onAuthenticationChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { onOptionsChange, options } = this.props;
     const jsonData = {
       ...options.jsonData,
-      basicAuth: (event.target as HTMLInputElement).checked,
+      basicAuth: event.target.checked,
     };
     onOptionsChange({ ...options, jsonData });
   };
@@ -147,6 +165,58 @@ export class ConfigEditor extends PureComponent<Props, State> {
     });
   };
 
+  onMaxOpenConnectionsChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      maxOpenConnections: event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+
+  onConnectionLifetimeChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      conectionLifetime: event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+  onUseCachingChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      useCaching: event.target.checked,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+  onuseCacheByDefaultChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      useCacheByDefault: event.target.checked,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+  onCacheSizeChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      cacheSize:  event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+  onCacheRetentionChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      cacheRetention:  event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+
+
+
   render() {
     const { options } = this.props;
     const { jsonData, secureJsonFields } = options;
@@ -155,7 +225,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
       <FieldSet>
         <h3 className="page-heading">Connection</h3>
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="Account name"
           tooltip="All access to Snowflake is either through your account name (provided by Snowflake) or a URL that uses the following format: `xxxxx.snowflakecomputing.com`" >
           <Input
@@ -167,7 +237,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
           />
         </InlineField>
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="Username"
           tooltip="" >
           <Input
@@ -179,19 +249,21 @@ export class ConfigEditor extends PureComponent<Props, State> {
           />
         </InlineField>
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="basic or key pair authentication"
           tooltip="" >
-          <Switch
-            type="boolean"
-            checked={jsonData.basicAuth}
-            onChange={this.onAuthenticationChange}
-          />
+            <InlineSwitch
+                name="useCacheByDefault"
+                required
+                value={jsonData.basicAuth ?? false}
+                autoComplete="off"
+                onChange={this.onAuthenticationChange}
+              />
         </InlineField>
 
         {!jsonData.basicAuth && (
           <InlineField
-            labelWidth={10}
+            labelWidth={30}
             label="Password"
             tooltip="" >
             <SecretInput
@@ -207,7 +279,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
         )}
         {jsonData.basicAuth && (
           <InlineField
-            labelWidth={10}
+            labelWidth={30}
             label="Private key"
             tooltip="The private key must be encoded in base 64 URL encoded pkcs8 (remove PEM header '----- BEGIN PRIVATE KEY -----' and '----- END PRIVATE KEY -----', remove line space and replace '+' with '-' and '/' with '_')" >
             <SecretInput
@@ -222,7 +294,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
           </InlineField>
         )}
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="Role"
           tooltip="" >
           <Input
@@ -237,7 +309,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
         <br />
         <h3 className="page-heading">Parameter configuration</h3>
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="Warehouse"
           tooltip="" >
           <Input
@@ -249,7 +321,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
           />
         </InlineField>
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="Database"
           tooltip="" >
           <Input
@@ -261,7 +333,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
           />
         </InlineField>
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="Schema"
           tooltip="" >
           <Input
@@ -275,7 +347,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
         <br />
         <h3 className="page-heading">Session configuration</h3>
         <InlineField
-          labelWidth={10}
+          labelWidth={30}
           label="Extra options"
           tooltip="" >
           <Input
@@ -286,7 +358,82 @@ export class ConfigEditor extends PureComponent<Props, State> {
             placeholder="TIMESTAMP_OUTPUT_FORMAT=MM-DD-YYYY&XXXXX=yyyyy&..."
           />
         </InlineField>
-
+        <br />
+        <h3 className="page-heading">Connection Pool configuration</h3>
+        <InlineField
+          labelWidth={30}
+          label="max. open Connections"
+          tooltip="How many connections will be opend from the datasource to snowflake (default: 100)" >
+          <Input
+            type="number"
+            className="width-20"
+            onChange={this.onMaxOpenConnectionsChange}
+            value={jsonData.maxOpenConnections || '100'}
+            placeholder="100"
+          />
+        </InlineField>
+        <InlineField
+          labelWidth={30}
+          label="Connection lifetime"
+          tooltip="How long open connections are hold to be reused in minutes. default=60 | 0=never close" >
+          <Input
+            type="number"
+            className="width-20"
+            onChange={this.onConnectionLifetimeChange}
+            value={jsonData.connectionLifetime || '60'}
+            placeholder="60"
+          />
+        </InlineField>
+        <br />
+        <h3 className="page-heading">local Caching configuration</h3>
+        <InlineField
+          labelWidth={30}
+          label="enable Caching"
+          tooltip="Enable the Caching Backend in the Datasource. If similar sql-statements are queried thee result will be delivered out of cache." >
+            <InlineSwitch
+                name="useCaching"
+                required
+                value={jsonData.useCaching ?? false}
+                autoComplete="off"
+                onChange={this.onUseCachingChange}
+              />
+        </InlineField>
+         {/*<InlineField
+          labelWidth={30}
+          label="useCaching by default"
+          tooltip="Always use caching for every Queries be default. No config Statement needed in the Query." >
+          <InlineSwitch
+                name="useCacheByDefault"
+                required
+                value={jsonData.useCacheByDefault ?? false}
+                autoComplete="off"
+                onChange={this.onuseCacheByDefaultChange}
+              />
+        </InlineField>*/}
+        <InlineField
+          labelWidth={30}
+          label="CacheSize"
+          tooltip="How long open connections are hold to be reused in minutes. default=60 | 0=never close" >
+          <Input
+            type="number"
+            className="width-20"
+            onChange={this.onCacheSizeChange}
+            value={jsonData.cacheSize || '2048'}
+            placeholder="2048"
+          />
+        </InlineField>
+        <InlineField
+          labelWidth={30}
+          label="CacheSize"
+          tooltip="How long open connections are hold to be reused in minutes. default=60 | 0=never close" >
+          <Input
+            type="number"
+            className="width-20"
+            onChange={this.onCacheRetentionChange}
+            value={jsonData.cacheRetention || '60'}
+            placeholder="60"
+          />
+        </InlineField>
       </FieldSet >
     )
     

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -90,18 +91,60 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 }
 
 type pluginConfig struct {
-	Account     string `json:"account"`
-	Username    string `json:"username"`
-	Role        string `json:"role"`
-	Warehouse   string `json:"warehouse"`
-	Database    string `json:"database"`
-	Schema      string `json:"schema"`
-	ExtraConfig string `json:"extraConfig"`
+	Account               string `json:"account"`
+	Username              string `json:"username"`
+	Role                  string `json:"role"`
+	Warehouse             string `json:"warehouse"`
+	Database              string `json:"database"`
+	Schema                string `json:"schema"`
+	ExtraConfig           string `json:"extraConfig"`
+	MaxOpenConnections    string `json:"maxOpenConnections"`
+	IntMaxOpenConnections int64
+	ConnectionLifetime    string `json:"connectionLifetime"`
+	IntConnectionLifetime int64
+	UseCaching            bool   `json:"useCaching"`
+	UseCacheByDefault     bool   `json:"useCacheByDefault"`
+	CacheSize             string `json:"cacheSize"`
+	IntCacheSize          int64
+	CacheRetention        string `json:"cacheRetention"`
+	IntCacheRetention     int64
 }
 
 func getConfig(settings *backend.DataSourceInstanceSettings) (pluginConfig, error) {
 	var config pluginConfig
 	err := json.Unmarshal(settings.JSONData, &config)
+	if config.MaxOpenConnections == "" {
+		config.MaxOpenConnections = "100"
+	}
+	if config.ConnectionLifetime == "" {
+		config.ConnectionLifetime = "60"
+	}
+	if config.CacheSize == "" {
+		config.CacheSize = "2048"
+	}
+	if config.CacheRetention == "" {
+		config.CacheRetention = "60"
+	}
+	if MaxOpenConnections, err := strconv.Atoi(config.MaxOpenConnections); err == nil {
+		config.IntMaxOpenConnections = int64(MaxOpenConnections)
+	} else {
+		return config, err
+	}
+	if ConnectionLifetime, err := strconv.Atoi(config.ConnectionLifetime); err == nil {
+		config.IntConnectionLifetime = int64(ConnectionLifetime)
+	} else {
+		return config, err
+	}
+	if CacheSize, err := strconv.Atoi(config.CacheSize); err == nil {
+		config.IntCacheSize = int64(CacheSize)
+	} else {
+		return config, err
+	}
+	if CacheRetention, err := strconv.Atoi(config.CacheRetention); err == nil {
+		config.IntCacheRetention = int64(CacheRetention)
+	} else {
+		return config, err
+	}
 	if err != nil {
 		return config, err
 	}
@@ -149,11 +192,52 @@ func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(int(config.IntMaxOpenConnections))
+	db.SetMaxIdleConns(int(config.IntMaxOpenConnections))
+	db.SetConnMaxLifetime(time.Duration(int(config.IntConnectionLifetime)) * time.Minute)
 
-	db.SetMaxOpenConns(100)                                  //config.DSInfo.JsonData.MaxOpenConns)
-	db.SetMaxIdleConns(100)                                  //config.DSInfo.JsonData.MaxIdleConns)
-	db.SetConnMaxLifetime(time.Duration(3600) * time.Second) //time.Duration(14400) * time.Second) //time.Duration(config.DSInfo.JsonData.ConnMaxLifetime) * time.Second)
-	cache, _ := bigcache.New(context.Background(), bigcache.DefaultConfig(60*time.Minute))
+	var cache *bigcache.BigCache = nil
+	if config.UseCaching {
+		cache_config := bigcache.Config{
+			// number of shards (must be a power of 2)
+			Shards: 1024,
+
+			// time after which entry can be evicted
+			LifeWindow: time.Duration(config.IntCacheRetention) * time.Minute,
+
+			// Interval between removing expired entries (clean up).
+			// If set to <= 0 then no action is performed.
+			// Setting to < 1 second is counterproductive — bigcache has a one second resolution.
+			CleanWindow: 5 * time.Minute,
+
+			// rps * lifeWindow, used only in initial memory allocation
+			MaxEntriesInWindow: 1000 * 10 * 60,
+
+			// max entry size in bytes, used only in initial memory allocation
+			MaxEntrySize: 500,
+
+			// prints information about additional memory allocation
+			Verbose: true,
+
+			// cache will not allocate more memory than this limit, value in MB
+			// if value is reached then the oldest entries can be overridden for the new ones
+			// 0 value means no size limit
+			HardMaxCacheSize: int(config.IntCacheSize),
+
+			// callback fired when the oldest entry is removed because of its expiration time or no space left
+			// for the new entry, or because delete was called. A bitmask representing the reason will be returned.
+			// Default value is nil which means no callback and it prevents from unwrapping the oldest entry.
+			OnRemove: nil,
+
+			// OnRemoveWithReason is a callback fired when the oldest entry is removed because of its expiration time or no space left
+			// for the new entry, or because delete was called. A constant representing the reason will be passed through.
+			// Default value is nil which means no callback and it prevents from unwrapping the oldest entry.
+			// Ignored if OnRemove is specified.
+			OnRemoveWithReason: nil,
+		}
+
+		cache, _ = bigcache.New(context.Background(), cache_config)
+	}
 	return &instanceSettings{db: db, cache: cache}, nil
 }
 

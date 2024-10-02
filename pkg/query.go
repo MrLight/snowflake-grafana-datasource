@@ -296,11 +296,11 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 	queryConfig.FinalQuery = strings.TrimSuffix(strings.TrimSpace(queryConfig.FinalQuery), ";")
 
 	frame := data.NewFrame("")
-	if (queryConfig.CacheState.Until.Unix() < 10 || queryConfig.CacheState.Until.Unix() >= time.Now().Unix()) && queryConfig.CacheState.Use {
+	if instance.cache != nil && (queryConfig.CacheState.Until.Unix() < 10 || queryConfig.CacheState.Until.Unix() >= time.Now().Unix()) && queryConfig.CacheState.Use {
 		cache_res, err := instance.cache.Get(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339) + queryConfig.FinalQuery))
 		if err != nil {
 			frame = td.querySQL(ctx, queryConfig, dataQuery)
-			if queryConfig.CacheState.Use {
+			if instance.cache != nil && queryConfig.CacheState.Use {
 				json, err := json.Marshal(frame)
 				if err == nil {
 					instance.cache.Set(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339)+queryConfig.FinalQuery), json)
@@ -312,7 +312,7 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 		}
 	} else {
 		frame = td.querySQL(ctx, queryConfig, dataQuery)
-		if queryConfig.CacheState.Use {
+		if instance.cache != nil && queryConfig.CacheState.Use {
 			json, err := json.Marshal(frame)
 			if err == nil {
 				instance.cache.Set(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339)+queryConfig.FinalQuery), json)
