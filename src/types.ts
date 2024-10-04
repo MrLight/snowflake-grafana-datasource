@@ -1,4 +1,4 @@
-import { DataQuery, DataSourceJsonData } from '@grafana/data';
+import { DataQuery, DataSourceJsonData } from '@grafana/schema';
 
 export interface SnowflakeQuery extends DataQuery {
   queryText?: string;
@@ -29,6 +29,13 @@ export interface SnowflakeOptions extends DataSourceJsonData {
   schema?: string;
   extraConfig?: string;
   basicAuth: boolean;
+  maxOpenConnections?: string;
+  connectionLifetime?: string;
+  useCaching: boolean;
+  useCacheByDefault: boolean;
+  cacheSize?: string;
+  cacheRetention?: string;
+
 }
 
 /**

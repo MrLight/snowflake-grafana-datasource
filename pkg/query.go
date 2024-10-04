@@ -55,8 +55,14 @@ type queryConfigStruct struct {
 	MaxDataPoints int64
 	FillMode      string
 	FillValue     float64
+	CacheState    cacheState
 	db            *sql.DB
 	actQueryCount *queryCounter
+}
+
+type cacheState struct {
+	Use   bool
+	Until time.Time
 }
 
 // type
@@ -264,6 +270,7 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 		Interval:      dataQuery.Interval,
 		TimeRange:     dataQuery.TimeRange,
 		MaxDataPoints: dataQuery.MaxDataPoints,
+		CacheState:    cacheState{Use: true, Until: time.Unix(0, 0)},
 		db:            instance.db,
 		actQueryCount: &td.actQueryCount,
 	}
@@ -289,94 +296,104 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 	queryConfig.FinalQuery = strings.TrimSuffix(strings.TrimSpace(queryConfig.FinalQuery), ";")
 
 	frame := data.NewFrame("")
-	cache_res, err := instance.cache.Get(GetMD5Hash(queryConfig.FinalQuery))
-	if err != nil { //|| queryConfig.TimeRange.To.UTC().Unix() >= time.Now().UTC().Truncate(time.Minute*5).Unix() {
-		dataResponse, err := queryConfig.fetchData(ctx)
+	if instance.cache != nil && (queryConfig.CacheState.Until.Unix() < 10 || queryConfig.CacheState.Until.Unix() >= time.Now().Unix()) && queryConfig.CacheState.Use {
+		cache_res, err := instance.cache.Get(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339) + queryConfig.FinalQuery))
 		if err != nil {
-			errAppendDebug("db query error", err, queryConfig.FinalQuery)
-			return
-		}
-		log.DefaultLogger.Debug("Response", "data", dataResponse)
-		for _, table := range dataResponse.Tables {
-			timeColumnIndex := -1
-			for i, column := range table.Columns {
-				/*if err != nil {
-					errAppendDebug("db query error", err, queryConfig.FinalQuery)
-					return
-				}*/
-				// Check time column
-				if queryConfig.isTimeSeriesType() && equalsIgnoreCase(queryConfig.TimeColumns, column.Name()) {
-					if strings.EqualFold(column.Name(), "Time") {
-						timeColumnIndex = i
-					}
-					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*time.Time{}))
-					continue
-				}
-				switch column.ScanType() {
-				case reflect.TypeOf(boolean):
-					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*bool{}))
-				case reflect.TypeOf(tim):
-					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*time.Time{}))
-				case reflect.TypeOf(integer):
-					precision, _, _ := column.DecimalSize()
-					if precision > 1 {
-						frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*float64{}))
-					} else {
-						frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*int64{}))
-					}
-				case reflect.TypeOf(float):
-					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*float64{}))
-				case reflect.TypeOf(str):
-					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*string{}))
-				default:
-					log.DefaultLogger.Error("Rows", "Unknown database type", column.DatabaseTypeName())
-					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*string{}))
+			frame = td.querySQL(ctx, queryConfig, dataQuery)
+			if instance.cache != nil && queryConfig.CacheState.Use {
+				json, err := json.Marshal(frame)
+				if err == nil {
+					instance.cache.Set(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339)+queryConfig.FinalQuery), json)
 				}
 			}
-
-			intervalStart := queryConfig.TimeRange.From.UnixNano() / 1e6
-			intervalEnd := queryConfig.TimeRange.To.UnixNano() / 1e6
-
-			count := 0
-			// add rows
-			for j, row := range table.Rows {
-				// Handle fill mode when the time column exist
-				if timeColumnIndex != -1 {
-					fillTimesSeries(queryConfig, intervalStart, row[Max(int64(timeColumnIndex), 0)].(time.Time).UnixNano()/1e6, timeColumnIndex, frame, len(table.Columns), &count, previousRow(table.Rows, j))
-				}
-				// without fill mode
-				for i, v := range row {
-					insertFrameField(frame, v, i)
-				}
-				count++
-			}
-			fillTimesSeries(queryConfig, intervalStart, intervalEnd, timeColumnIndex, frame, len(table.Columns), &count, previousRow(table.Rows, len(table.Rows)))
-		}
-		if queryConfig.isTimeSeriesType() {
-			frame = td.longToWide(frame, queryConfig, dataResponse, err)
-		}
-		log.DefaultLogger.Debug("Converted wide time Frame is:", frame)
-		frame.RefID = dataQuery.RefID
-		frame.Meta = &data.FrameMeta{
-			Type:                data.FrameTypeTimeSeriesWide,
-			ExecutedQueryString: queryConfig.FinalQuery,
-		}
-		if queryConfig.TimeRange.To.UTC().Unix() <= time.Now().UTC().Truncate(time.Minute*5).Unix() || true {
-			json, err := json.Marshal(frame)
-			if err == nil {
-
-				instance.cache.Set(GetMD5Hash(queryConfig.FinalQuery), json)
-			}
+		} else {
+			log.DefaultLogger.Info("Snowflake cache hit")
+			frame.UnmarshalJSON(cache_res)
 		}
 	} else {
-		{
-			frame.UnmarshalJSON(cache_res)
+		frame = td.querySQL(ctx, queryConfig, dataQuery)
+		if instance.cache != nil && queryConfig.CacheState.Use {
+			json, err := json.Marshal(frame)
+			if err == nil {
+				instance.cache.Set(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339)+queryConfig.FinalQuery), json)
+			}
 		}
 	}
 	queryResult.dataResponse.Frames = data.Frames{frame}
 	ch <- queryResult
 }
 
+func (td *SnowflakeDatasource) querySQL(ctx context.Context, queryConfig queryConfigStruct, dataQuery backend.DataQuery) *data.Frame {
+	dataResponse, err := queryConfig.fetchData(ctx)
+	frame := data.NewFrame("")
+
+	log.DefaultLogger.Debug("Response", "data", dataResponse)
+	for _, table := range dataResponse.Tables {
+		timeColumnIndex := -1
+		for i, column := range table.Columns {
+			/*if err != nil {
+				errAppendDebug("db query error", err, queryConfig.FinalQuery)
+				return
+			}*/
+			// Check time column
+			if queryConfig.isTimeSeriesType() && equalsIgnoreCase(queryConfig.TimeColumns, column.Name()) {
+				if strings.EqualFold(column.Name(), "Time") {
+					timeColumnIndex = i
+				}
+				frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*time.Time{}))
+				continue
+			}
+			switch column.ScanType() {
+			case reflect.TypeOf(boolean):
+				frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*bool{}))
+			case reflect.TypeOf(tim):
+				frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*time.Time{}))
+			case reflect.TypeOf(integer):
+				precision, _, _ := column.DecimalSize()
+				if precision > 1 {
+					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*float64{}))
+				} else {
+					frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*int64{}))
+				}
+			case reflect.TypeOf(float):
+				frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*float64{}))
+			case reflect.TypeOf(str):
+				frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*string{}))
+			default:
+				log.DefaultLogger.Error("Rows", "Unknown database type", column.DatabaseTypeName())
+				frame.Fields = append(frame.Fields, data.NewField(column.Name(), nil, []*string{}))
+			}
+		}
+
+		intervalStart := queryConfig.TimeRange.From.UnixNano() / 1e6
+		intervalEnd := queryConfig.TimeRange.To.UnixNano() / 1e6
+
+		count := 0
+		// add rows
+		for j, row := range table.Rows {
+			// Handle fill mode when the time column exist
+			if timeColumnIndex != -1 {
+				fillTimesSeries(queryConfig, intervalStart, row[Max(int64(timeColumnIndex), 0)].(time.Time).UnixNano()/1e6, timeColumnIndex, frame, len(table.Columns), &count, previousRow(table.Rows, j))
+			}
+			// without fill mode
+			for i, v := range row {
+				insertFrameField(frame, v, i)
+			}
+			count++
+		}
+		fillTimesSeries(queryConfig, intervalStart, intervalEnd, timeColumnIndex, frame, len(table.Columns), &count, previousRow(table.Rows, len(table.Rows)))
+	}
+	if queryConfig.isTimeSeriesType() {
+		frame = td.longToWide(frame, queryConfig, dataResponse, err)
+	}
+	log.DefaultLogger.Debug("Converted wide time Frame is:", frame)
+	frame.RefID = dataQuery.RefID
+	frame.Meta = &data.FrameMeta{
+		Type:                data.FrameTypeTimeSeriesWide,
+		ExecutedQueryString: queryConfig.FinalQuery,
+	}
+	return frame
+}
 func (td *SnowflakeDatasource) longToWide(frame *data.Frame, queryConfig queryConfigStruct, dataResponse DataQueryResult, err error) *data.Frame {
 	tsSchema := frame.TimeSeriesSchema()
 	if tsSchema.Type == data.TimeSeriesTypeLong {

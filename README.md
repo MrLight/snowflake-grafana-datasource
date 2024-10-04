@@ -227,3 +227,4 @@ The snowflake datasource is a data source backend plugin composed of both fronte
 ## License
 
 Snowflake grafana plugin has been released under Apache License 2.0. Please, refer to the LICENSE.txt file for further information.
+
