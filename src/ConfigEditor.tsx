@@ -412,7 +412,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
         </InlineField>*/}
         <InlineField
           labelWidth={30}
-          label="CacheSize"
+          label="Cache Size"
           tooltip="How long open connections are hold to be reused in minutes. default=60 | 0=never close" >
           <Input
             type="number"
@@ -424,7 +424,7 @@ export class ConfigEditor extends PureComponent<Props, State> {
         </InlineField>
         <InlineField
           labelWidth={30}
-          label="CacheSize"
+          label="Cache Retention Time"
           tooltip="How long open connections are hold to be reused in minutes. default=60 | 0=never close" >
           <Input
             type="number"
