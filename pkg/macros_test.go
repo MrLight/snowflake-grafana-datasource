@@ -2,11 +2,10 @@ package main
 
 import (
 	"fmt"
-	"testing"
-	"time"
-
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/stretchr/testify/require"
+	"testing"
+	"time"
 )
 
 func TestEvaluateMacro(t *testing.T) {
@@ -39,9 +38,6 @@ func TestEvaluateMacro(t *testing.T) {
 		{name: "__timeFilter", args: []string{}, err: "missing time column argument for macro __timeFilter"},
 		{name: "__timeFilter", args: []string{"col"}, config: configStruct, response: "col > CONVERT_TIMEZONE('UTC', 'UTC', '" + timeRange.From.UTC().Format(time.RFC3339Nano) + "'::timestamp_ntz) AND col < CONVERT_TIMEZONE('UTC', 'UTC', '" + timeRange.To.UTC().Format(time.RFC3339Nano) + "'::timestamp_ntz)"},
 		{name: "__timeFilter", args: []string{"col", "'America/New_York'"}, config: configStruct, response: "col > CONVERT_TIMEZONE('UTC', 'America/New_York', '" + timeRange.From.UTC().Format(time.RFC3339Nano) + "'::timestamp_ntz) AND col < CONVERT_TIMEZONE('UTC', 'America/New_York', '" + timeRange.To.UTC().Format(time.RFC3339Nano) + "'::timestamp_ntz)"},
-		// __timeTzFilter
-		{name: "__timeTzFilter", args: []string{}, err: "missing time column argument for macro __timeTzFilter"},
-		{name: "__timeTzFilter", args: []string{"col"}, config: configStruct, response: "col > '" + timeRange.From.UTC().Format(time.RFC3339Nano) + "'::timestamp_tz AND col < '" + timeRange.To.UTC().Format(time.RFC3339Nano) + "'::timestamp_tz"},
 		// __timeFrom
 		{name: "__timeFrom", args: []string{}, config: configStruct, response: "'" + timeRange.From.UTC().Format(time.RFC3339Nano) + "'"},
 		// __timeTo
