@@ -7,7 +7,6 @@ yarn-error.log*
 
 node_modules/
 .nvmrc
-.eslintcache
 
 # Runtime data
 pids
