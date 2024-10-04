@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"net/http"
 	"net/url"
 
 	"github.com/allegro/bigcache/v3"
@@ -16,6 +17,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/resource"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/resource/httpadapter"
 )
 
 type DBDataResponse struct {
@@ -29,13 +32,17 @@ func newDatasource() datasource.ServeOpts {
 	// into `NewInstanceManger` is called when the instance is created
 	// for the first time or when a datasource configuration changed.
 	im := datasource.NewInstanceManager(newDataSourceInstance)
+	mux := http.NewServeMux()
+	handler := httpadapter.New(mux)
 	ds := &SnowflakeDatasource{
-		im: im,
+		im:      im,
+		handler: handler,
 	}
 
 	return datasource.ServeOpts{
-		QueryDataHandler:   ds,
-		CheckHealthHandler: ds,
+		QueryDataHandler:    ds,
+		CheckHealthHandler:  ds,
+		CallResourceHandler: handler,
 	}
 }
 
@@ -44,7 +51,18 @@ type SnowflakeDatasource struct {
 	// of datasource instances in plugins. It's not a requirements
 	// but a best practice that we recommend that you follow.
 	im            instancemgmt.InstanceManager
+	handler       backend.CallResourceHandler
 	actQueryCount queryCounter
+}
+
+func (ds *SnowflakeDatasource) CallResource(ctx context.Context, req *backend.CallResourceRequest, sender backend.CallResourceResponseSender) error {
+	log.DefaultLogger.Info(fmt.Sprintf("CallResource %s", req.URL))
+
+	if req.Path == "pluginStatus" {
+		return resource.SendPlainText(sender, "huhu") //.SendJSON(sender, {"text": "Hallo Welt"})
+	}
+	return nil
+	//return ds.handler.CallResource(ctx, req, sender)
 }
 
 // QueryData handles multiple queries and returns multiple responses.
