@@ -54,6 +54,7 @@ type queryConfigStruct struct {
 	FillMode      string
 	FillValue     float64
 	db            *sql.DB
+	config        *pluginConfig
 	actQueryCount *queryCounter
 }
 
@@ -92,8 +93,8 @@ func (qc *queryConfigStruct) fetchData(ctx context.Context) (result DataQueryRes
 		log.DefaultLogger.Info(fmt.Sprintf("%+v - %s - %d", stats, duration, int(qc.actQueryCount.get())))
 
 	}()
-	if int(qc.actQueryCount.get()) >= (stats.MaxOpenConnections * 10) {
-		err := errors.New("too many open connections")
+	if int(qc.actQueryCount.get()) >= (int(qc.config.IntMaxQueuedQueries)) {
+		err := errors.New("too many open queries")
 		log.DefaultLogger.Error("Poolsize exceeded", "query", qc.FinalQuery, "err", err)
 		return result, err
 	}
@@ -258,6 +259,7 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 		TimeRange:     dataQuery.TimeRange,
 		MaxDataPoints: dataQuery.MaxDataPoints,
 		db:            instance.db,
+		config:        instance.config,
 		actQueryCount: &td.actQueryCount,
 	}
 
