@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -89,18 +90,48 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 }
 
 type pluginConfig struct {
-	Account     string `json:"account"`
-	Username    string `json:"username"`
-	Role        string `json:"role"`
-	Warehouse   string `json:"warehouse"`
-	Database    string `json:"database"`
-	Schema      string `json:"schema"`
-	ExtraConfig string `json:"extraConfig"`
+	Account               string `json:"account"`
+	Username              string `json:"username"`
+	Role                  string `json:"role"`
+	Warehouse             string `json:"warehouse"`
+	Database              string `json:"database"`
+	Schema                string `json:"schema"`
+	ExtraConfig           string `json:"extraConfig"`
+	MaxOpenConnections    string `json:"maxOpenConnections"`
+	IntMaxOpenConnections int64
+	MaxQueuedQueries      string `json:"maxQueuedQueries"`
+	IntMaxQueuedQueries   int64
+	ConnectionLifetime    string `json:"connectionLifetime"`
+	IntConnectionLifetime int64
 }
 
 func getConfig(settings *backend.DataSourceInstanceSettings) (pluginConfig, error) {
 	var config pluginConfig
 	err := json.Unmarshal(settings.JSONData, &config)
+	if config.MaxOpenConnections == "" {
+		config.MaxOpenConnections = "100"
+	}
+	if config.ConnectionLifetime == "" {
+		config.ConnectionLifetime = "60"
+	}
+	if config.MaxQueuedQueries == "" {
+		config.MaxQueuedQueries = "400"
+	}
+	if MaxOpenConnections, err := strconv.Atoi(config.MaxOpenConnections); err == nil {
+		config.IntMaxOpenConnections = int64(MaxOpenConnections)
+	} else {
+		return config, err
+	}
+	if ConnectionLifetime, err := strconv.Atoi(config.ConnectionLifetime); err == nil {
+		config.IntConnectionLifetime = int64(ConnectionLifetime)
+	} else {
+		return config, err
+	}
+	if MaxQueuedQueries, err := strconv.Atoi(config.MaxQueuedQueries); err == nil {
+		config.IntMaxQueuedQueries = int64(MaxQueuedQueries)
+	} else {
+		return config, err
+	}
 	if err != nil {
 		return config, err
 	}
@@ -127,7 +158,8 @@ func getConnectionString(config *pluginConfig, password string, privateKey strin
 }
 
 type instanceSettings struct {
-	db *sql.DB
+	db     *sql.DB
+	config *pluginConfig
 }
 
 func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
@@ -148,10 +180,10 @@ func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(100)                                  //config.DSInfo.JsonData.MaxOpenConns)
-	db.SetMaxIdleConns(100)                                  //config.DSInfo.JsonData.MaxIdleConns)
-	db.SetConnMaxLifetime(time.Duration(3600) * time.Second) //time.Duration(14400) * time.Second) //time.Duration(config.DSInfo.JsonData.ConnMaxLifetime) * time.Second)
-	return &instanceSettings{db: db}, nil
+	db.SetMaxOpenConns(int(config.IntMaxOpenConnections))
+	db.SetMaxIdleConns(int(config.IntMaxOpenConnections))
+	db.SetConnMaxLifetime(time.Duration(int(config.IntConnectionLifetime)) * time.Minute)
+	return &instanceSettings{db: db, config: &config}, nil
 }
 
 func (s *instanceSettings) Dispose() {
