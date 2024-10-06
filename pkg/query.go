@@ -5,12 +5,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
 	"runtime/debug"
+	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +31,20 @@ const timeSeriesType = "time series"
 
 func (qc *queryConfigStruct) isTimeSeriesType() bool {
 	return qc.QueryType == timeSeriesType
+}
+
+type queryCounter int32
+
+func (c *queryCounter) inc() int32 {
+	return atomic.AddInt32((*int32)(c), 1)
+}
+
+func (c *queryCounter) dec() int32 {
+	return atomic.AddInt32((*int32)(c), -1)
+}
+
+func (c *queryCounter) get() int32 {
+	return atomic.LoadInt32((*int32)(c))
 }
 
 type queryCounter int32
@@ -99,6 +117,7 @@ func (qc *queryConfigStruct) fetchData(ctx context.Context) (result DataQueryRes
 		return result, err
 	}
 	rows, err := qc.db.QueryContext(ctx, qc.FinalQuery)
+	rows, err := qc.db.QueryContext(ctx, qc.FinalQuery)
 	if err != nil {
 		if strings.Contains(err.Error(), "000605") {
 			log.DefaultLogger.Info("Query got cancelled", "query", qc.FinalQuery, "err", err)
@@ -108,6 +127,11 @@ func (qc *queryConfigStruct) fetchData(ctx context.Context) (result DataQueryRes
 		log.DefaultLogger.Error("Could not execute query", "query", qc.FinalQuery, "err", err)
 		return result, err
 	}
+	defer func() {
+		if err := rows.Close(); err != nil {
+			log.DefaultLogger.Warn("Failed to close rows", "err", err)
+		}
+	}()
 	defer func() {
 		if err := rows.Close(); err != nil {
 			log.DefaultLogger.Warn("Failed to close rows", "err", err)
@@ -235,15 +259,42 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 		}
 	}()
 
+func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch chan DBDataResponse, instance *instanceSettings, dataQuery backend.DataQuery) {
+	defer wg.Done()
+	queryResult := DBDataResponse{
+		dataResponse: backend.DataResponse{},
+		refID:        dataQuery.RefID,
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.DefaultLogger.Error("ExecuteQuery panic", "error", r, "stack", string(debug.Stack()))
+			if theErr, ok := r.(error); ok {
+				queryResult.dataResponse.Error = theErr
+			} else if theErrString, ok := r.(string); ok {
+				queryResult.dataResponse.Error = fmt.Errorf(theErrString)
+			} else {
+				//queryResult.dataResponse.Error = fmt.Errorf("unexpected error - %s", td.userError)
+			}
+			ch <- queryResult
+		}
+	}()
+
 	var qm queryModel
 	err := json.Unmarshal(dataQuery.JSON, &qm)
 	if err != nil {
 		//log.DefaultLogger.Error("Could not unmarshal query", "err", err)
 		//queryResult.dataResponse.Error = err
 		panic("Could not unmarshal query")
+		//log.DefaultLogger.Error("Could not unmarshal query", "err", err)
+		//queryResult.dataResponse.Error = err
+		panic("Could not unmarshal query")
 	}
 
 	if qm.QueryText == "" {
+		//log.DefaultLogger.Error("SQL query must no be empty")
+		//queryResult.dataResponse.Error = fmt.Errorf("SQL query must no be empty")
+		panic("Query model property rawSql should not be empty at this point")
 		//log.DefaultLogger.Error("SQL query must no be empty")
 		//queryResult.dataResponse.Error = fmt.Errorf("SQL query must no be empty")
 		panic("Query model property rawSql should not be empty at this point")
@@ -272,10 +323,26 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 		queryResult.dataResponse.Frames = data.Frames{&emptyFrame}
 		ch <- queryResult
 	}
+		db:            instance.db,
+		config:        instance.config,
+		actQueryCount: &td.actQueryCount,
+	}
+
+	errAppendDebug := func(frameErr string, err error, query string) {
+		var emptyFrame data.Frame
+		emptyFrame.SetMeta(&data.FrameMeta{
+			ExecutedQueryString: query,
+		})
+		queryResult.dataResponse.Error = fmt.Errorf("%s: %w", frameErr, err)
+		queryResult.dataResponse.Frames = data.Frames{&emptyFrame}
+		ch <- queryResult
+	}
 
 	// Apply macros
 	queryConfig.FinalQuery, err = Interpolate(&queryConfig)
 	if err != nil {
+		errAppendDebug("interpolation failed", err, queryConfig.FinalQuery)
+		return
 		errAppendDebug("interpolation failed", err, queryConfig.FinalQuery)
 		return
 	}
@@ -285,7 +352,10 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 
 	frame := data.NewFrame("")
 	dataResponse, err := queryConfig.fetchData(ctx)
+	dataResponse, err := queryConfig.fetchData(ctx)
 	if err != nil {
+		errAppendDebug("db query error", err, queryConfig.FinalQuery)
+		return
 		errAppendDebug("db query error", err, queryConfig.FinalQuery)
 		return
 	}
@@ -294,6 +364,8 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 		timeColumnIndex := -1
 		for i, column := range table.Columns {
 			if err != nil {
+				errAppendDebug("db query error", err, queryConfig.FinalQuery)
+				return
 				errAppendDebug("db query error", err, queryConfig.FinalQuery)
 				return
 			}
@@ -355,6 +427,8 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 		ExecutedQueryString: queryConfig.FinalQuery,
 	}
 
+	queryResult.dataResponse.Frames = data.Frames{frame}
+	ch <- queryResult
 	queryResult.dataResponse.Frames = data.Frames{frame}
 	ch <- queryResult
 }
