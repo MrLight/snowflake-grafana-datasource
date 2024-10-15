@@ -284,15 +284,17 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 
 	// Remove final semi column
 	queryConfig.FinalQuery = strings.TrimSuffix(strings.TrimSpace(queryConfig.FinalQuery), ";")
-
+	querySourceString := "cache"
 	frame, err := getQueryFromCache(instance.cache, queryConfig)
 	if err != nil {
 		frame, err = td.queryData(ctx, queryConfig, dataQuery)
+		querySourceString = "server"
 		if err != nil {
 			errAppendDebug("db query error", err, queryConfig.FinalQuery)
 		}
 		setQueryInCache(instance.cache, queryConfig, frame)
 	}
+	queriesTotal.WithLabelValues(queryConfig.QueryType, querySourceString).Inc()
 	queryResult.dataResponse.Frames = data.Frames{frame}
 	ch <- queryResult
 }

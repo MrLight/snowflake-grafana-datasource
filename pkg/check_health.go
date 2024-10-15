@@ -21,6 +21,7 @@ func (td *SnowflakeDatasource) CheckHealth(ctx context.Context, req *backend.Che
 	if err != nil {
 		return nil, err
 	}
+
 	instance := i.(*instanceSettings)
 	db := instance.db
 

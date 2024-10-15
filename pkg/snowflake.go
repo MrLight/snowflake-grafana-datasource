@@ -23,8 +23,16 @@ type DBDataResponse struct {
 	refID        string
 }
 
+// NewDatasource creates a new datasource instance.
+func NewDatasource(_ context.Context, dis backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+
+	return &SnowflakeDatasource{
+		im: datasource.NewInstanceManager(newDataSourceInstance),
+	}, nil
+}
+
 // newDatasource returns datasource.ServeOpts.
-func newDatasource() datasource.ServeOpts {
+/*func newDatasource() datasource.ServeOpts {
 	// creates a instance manager for your plugin. The function passed
 	// into `NewInstanceManger` is called when the instance is created
 	// for the first time or when a datasource configuration changed.
@@ -37,7 +45,7 @@ func newDatasource() datasource.ServeOpts {
 		QueryDataHandler:   ds,
 		CheckHealthHandler: ds,
 	}
-}
+}*/
 
 type SnowflakeDatasource struct {
 	// The instance manager can help with lifecycle management
@@ -167,11 +175,13 @@ type instanceSettings struct {
 	cache         *bigcache.BigCache
 	config        *pluginConfig
 	actQueryCount queryCounter
+	prom          *LocalPrometheusCollector
 }
 
 func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 
 	log.DefaultLogger.Info("Creating instance")
+
 	password := setting.DecryptedSecureJSONData["password"]
 	privateKey := setting.DecryptedSecureJSONData["privateKey"]
 
@@ -194,10 +204,18 @@ func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 	if err != nil {
 		return nil, err
 	}
-	return &instanceSettings{db: db, config: &config, cache: cache}, nil
+
+	prom := NewLocalPrometheusCollector(db, cache, &setting)
+	//err = prometheus.DefaultRegisterer.Register(prom)
+	if err != nil {
+		log.DefaultLogger.Error("Failed to register prometheus", "error", err)
+	}
+	return &instanceSettings{db: db, config: &config, cache: cache, prom: prom}, nil
 }
 
 func (s *instanceSettings) Dispose() {
+	//check := prometheus.DefaultRegisterer.Unregister(s.prom)
+	//log.DefaultLogger.Info("Prometheus Unregister", check)
 	log.DefaultLogger.Info("Disposing of instance")
 	if s.db != nil {
 		if err := s.db.Close(); err != nil {
