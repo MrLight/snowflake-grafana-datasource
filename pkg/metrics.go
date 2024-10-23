@@ -14,7 +14,6 @@ import (
 type LocalPrometheusCollector struct {
 	db                        *sql.DB
 	cache                     *bigcache.BigCache
-	setting                   *backend.DataSourceInstanceSettings
 	db_in_use_connections     *prometheus.Desc
 	db_idle_connections       *prometheus.Desc
 	db_open_connections       *prometheus.Desc
@@ -51,66 +50,44 @@ func (c *LocalPrometheusCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (c *LocalPrometheusCollector) Collect(ch chan<- prometheus.Metric) {
-	ch <- prometheus.MustNewConstMetric(c.db_in_use_connections, prometheus.GaugeValue, float64(c.db.Stats().InUse), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.db_idle_connections, prometheus.GaugeValue, float64(c.db.Stats().Idle), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.db_open_connections, prometheus.GaugeValue, float64(c.db.Stats().OpenConnections), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.db_idle_connections_total, prometheus.CounterValue, float64(c.db.Stats().MaxIdleClosed), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.db_idle_time_total, prometheus.CounterValue, float64(c.db.Stats().MaxIdleTimeClosed), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.db_max_open_connections, prometheus.GaugeValue, float64(c.db.Stats().MaxOpenConnections), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.db_wait_count, prometheus.CounterValue, float64(c.db.Stats().WaitCount), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.db_wait_duration, prometheus.CounterValue, float64(c.db.Stats().WaitDuration), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.cache_act_capacity, prometheus.GaugeValue, float64(c.cache.Capacity()), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.cache_act_size, prometheus.GaugeValue, float64(c.cache.Len()), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.cache_collisions_total, prometheus.CounterValue, float64(c.cache.Stats().Collisions), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.cache_del_hits_total, prometheus.CounterValue, float64(c.cache.Stats().DelHits), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.cache_del_miss_total, prometheus.CounterValue, float64(c.cache.Stats().DelMisses), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.cache_hits_total, prometheus.CounterValue, float64(c.cache.Stats().Hits), c.setting.Name)
-	ch <- prometheus.MustNewConstMetric(c.cache_miss_total, prometheus.CounterValue, float64(c.cache.Stats().Misses), c.setting.Name)
+	ch <- prometheus.MustNewConstMetric(c.db_in_use_connections, prometheus.GaugeValue, float64(c.db.Stats().InUse))
+	ch <- prometheus.MustNewConstMetric(c.db_idle_connections, prometheus.GaugeValue, float64(c.db.Stats().Idle))
+	ch <- prometheus.MustNewConstMetric(c.db_open_connections, prometheus.GaugeValue, float64(c.db.Stats().OpenConnections))
+	ch <- prometheus.MustNewConstMetric(c.db_idle_connections_total, prometheus.CounterValue, float64(c.db.Stats().MaxIdleClosed))
+	ch <- prometheus.MustNewConstMetric(c.db_idle_time_total, prometheus.CounterValue, float64(c.db.Stats().MaxIdleTimeClosed))
+	ch <- prometheus.MustNewConstMetric(c.db_max_open_connections, prometheus.GaugeValue, float64(c.db.Stats().MaxOpenConnections))
+	ch <- prometheus.MustNewConstMetric(c.db_wait_count, prometheus.CounterValue, float64(c.db.Stats().WaitCount))
+	ch <- prometheus.MustNewConstMetric(c.db_wait_duration, prometheus.CounterValue, float64(c.db.Stats().WaitDuration))
+	ch <- prometheus.MustNewConstMetric(c.cache_act_capacity, prometheus.GaugeValue, float64(c.cache.Capacity()))
+	ch <- prometheus.MustNewConstMetric(c.cache_act_size, prometheus.GaugeValue, float64(c.cache.Len()))
+	ch <- prometheus.MustNewConstMetric(c.cache_collisions_total, prometheus.CounterValue, float64(c.cache.Stats().Collisions))
+	ch <- prometheus.MustNewConstMetric(c.cache_del_hits_total, prometheus.CounterValue, float64(c.cache.Stats().DelHits))
+	ch <- prometheus.MustNewConstMetric(c.cache_del_miss_total, prometheus.CounterValue, float64(c.cache.Stats().DelMisses))
+	ch <- prometheus.MustNewConstMetric(c.cache_hits_total, prometheus.CounterValue, float64(c.cache.Stats().Hits))
+	ch <- prometheus.MustNewConstMetric(c.cache_miss_total, prometheus.CounterValue, float64(c.cache.Stats().Misses))
 }
 
 func NewLocalPrometheusCollector(db *sql.DB, cache *bigcache.BigCache, setting *backend.DataSourceInstanceSettings) *LocalPrometheusCollector {
-	//prom_name := ToSnakeCase(setting.Name)
-	//prom_name = strings.ReplaceAll(prom_name, "-", "_")
+	prom_name := ToSnakeCase(setting.Name)
+	prom_name = strings.ReplaceAll(prom_name, "-", "_")
 	return &LocalPrometheusCollector{
 		db:                        db,
-		cache:                     cache, //nil
-		setting:                   setting,
-		db_in_use_connections:     prometheus.NewDesc("grafana_plugin_sql_pool_in_use_connections", "SQL Pool - The number of connections currently in use.", []string{"instance_name"}, nil),
-		db_idle_connections:       prometheus.NewDesc("grafana_plugin_sql_pool_idle_connections", "SQL Pool - The number of idle connections.", []string{"instance_name"}, nil),
-		db_open_connections:       prometheus.NewDesc("grafana_plugin_sql_pool_open_connections", "SQL Pool - The number of currently open connections. Pool Status", []string{"instance_name"}, nil),
-		db_idle_connections_total: prometheus.NewDesc("grafana_plugin_sql_pool_idle_connections_total", "SQL Pool - The total number of connections closed due to SetMaxIdleConns.", []string{"instance_name"}, nil),
-		db_idle_time_total:        prometheus.NewDesc("grafana_plugin_sql_pool_idle_timeout_connections_total", "SQL Pool - The total number of connections closed due to SetConnMaxIdleTime.", []string{"instance_name"}, nil),
-		db_max_open_connections:   prometheus.NewDesc("grafana_plugin_sql_pool_max_connections", "SQL Pool - Maximum number of open connections to the database.", []string{"instance_name"}, nil),
-		db_wait_count:             prometheus.NewDesc("grafana_plugin_sql_pool_count_total", "SQL Pool - Connections total wait count", []string{"instance_name"}, nil),
-		db_wait_duration:          prometheus.NewDesc("grafana_plugin_sql_pool_duration_total", "SQL Pool - The total time blocked waiting for a new connection.", []string{"instance_name"}, nil),
-		cache_act_capacity:        prometheus.NewDesc("grafana_plugin_cache_act_capacity", "Cache - Capacity returns amount of bytes store in the cache.", []string{"instance_name"}, nil),
-		cache_act_size:            prometheus.NewDesc("grafana_plugin_cache_act_size", "Cache Len computes number of entries in cache- ", []string{"instance_name"}, nil),
-		cache_collisions_total:    prometheus.NewDesc("grafana_plugin_cache_collisions_total", "Cache - Collisions is a number of happened key-collisions", []string{"instance_name"}, nil),
-		cache_del_hits_total:      prometheus.NewDesc("grafana_plugin_cache_del_hits_total", "Cache - DelHits is a number of successfully deleted keys", []string{"instance_name"}, nil),
-		cache_del_miss_total:      prometheus.NewDesc("grafana_plugin_cache_del_miss_total", "Cache - DelMisses is a number of not deleted keys", []string{"instance_name"}, nil),
-		cache_hits_total:          prometheus.NewDesc("grafana_plugin_cache_hits_total", "Cache - Hits is a number of successfully found keys", []string{"instance_name"}, nil),
-		cache_miss_total:          prometheus.NewDesc("grafana_plugin_cache_miss_total", "Cache - Misses is a number of not found keys", []string{"instance_name"}, nil)}
-}
-
-func NewLocalPrometheusCollector_() *LocalPrometheusCollector {
-	//prom_name := ToSnakeCase(setting.Name)
-	//prom_name = strings.ReplaceAll(prom_name, "-", "_")
-	return &LocalPrometheusCollector{
-		db_in_use_connections:     prometheus.NewDesc("grafana_plugin_sql_pool_in_use_connections", "SQL Pool - The number of connections currently in use.", []string{"instance_name"}, nil),
-		db_idle_connections:       prometheus.NewDesc("grafana_plugin_sql_pool_idle_connections", "SQL Pool - The number of idle connections.", []string{"instance_name"}, nil),
-		db_open_connections:       prometheus.NewDesc("grafana_plugin_sql_pool_open_connections", "SQL Pool - The number of currently open connections. Pool Status", []string{"instance_name"}, nil),
-		db_idle_connections_total: prometheus.NewDesc("grafana_plugin_sql_pool_idle_connections_total", "SQL Pool - The total number of connections closed due to SetMaxIdleConns.", []string{"instance_name"}, nil),
-		db_idle_time_total:        prometheus.NewDesc("grafana_plugin_sql_pool_idle_timeout_connections_total", "SQL Pool - The total number of connections closed due to SetConnMaxIdleTime.", []string{"instance_name"}, nil),
-		db_max_open_connections:   prometheus.NewDesc("grafana_plugin_sql_pool_max_connections", "SQL Pool - Maximum number of open connections to the database.", []string{"instance_name"}, nil),
-		db_wait_count:             prometheus.NewDesc("grafana_plugin_sql_pool_count_total", "SQL Pool - Connections total wait count", []string{"instance_name"}, nil),
-		db_wait_duration:          prometheus.NewDesc("grafana_plugin_sql_pool_duration_total", "SQL Pool - The total time blocked waiting for a new connection.", []string{"instance_name"}, nil),
-		cache_act_capacity:        prometheus.NewDesc("grafana_plugin_cache_act_capacity", "Cache - Capacity returns amount of bytes store in the cache.", []string{"instance_name"}, nil),
-		cache_act_size:            prometheus.NewDesc("grafana_plugin_cache_act_size", "Cache Len computes number of entries in cache- ", []string{"instance_name"}, nil),
-		cache_collisions_total:    prometheus.NewDesc("grafana_plugin_cache_collisions_total", "Cache - Collisions is a number of happened key-collisions", []string{"instance_name"}, nil),
-		cache_del_hits_total:      prometheus.NewDesc("grafana_plugin_cache_del_hits_total", "Cache - DelHits is a number of successfully deleted keys", []string{"instance_name"}, nil),
-		cache_del_miss_total:      prometheus.NewDesc("grafana_plugin_cache_del_miss_total", "Cache - DelMisses is a number of not deleted keys", []string{"instance_name"}, nil),
-		cache_hits_total:          prometheus.NewDesc("grafana_plugin_cache_hits_total", "Cache - Hits is a number of successfully found keys", []string{"instance_name"}, nil),
-		cache_miss_total:          prometheus.NewDesc("grafana_plugin_cache_miss_total", "Cache - Misses is a number of not found keys", []string{"instance_name"}, nil)}
+		cache:                     cache,
+		db_in_use_connections:     prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_in_use_connections", "SQL Pool - The number of connections currently in use.", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		db_idle_connections:       prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_idle_connections", "SQL Pool - The number of idle connections.", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		db_open_connections:       prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_open_connections", "SQL Pool - The number of currently open connections. Pool Status", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		db_idle_connections_total: prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_idle_connections_total", "SQL Pool - The total number of connections closed due to SetMaxIdleConns.", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		db_idle_time_total:        prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_idle_timeout_connections_total", "SQL Pool - The total number of connections closed due to SetConnMaxIdleTime.", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		db_max_open_connections:   prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_max_connections", "SQL Pool - Maximum number of open connections to the database.", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		db_wait_count:             prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_count_total", "SQL Pool - Connections total wait count", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		db_wait_duration:          prometheus.NewDesc("grafana_plugin_"+prom_name+"_sql_pool_duration_total", "SQL Pool - The total time blocked waiting for a new connection.", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		cache_act_capacity:        prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_act_capacity", "Cache - Capacity returns amount of bytes store in the cache.", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		cache_act_size:            prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_act_size", "Cache Len computes number of entries in cache- ", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		cache_collisions_total:    prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_collisions_total", "Cache - Collisions is a number of happened key-collisions", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		cache_del_hits_total:      prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_del_hits_total", "Cache - DelHits is a number of successfully deleted keys", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		cache_del_miss_total:      prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_del_miss_total", "Cache - DelMisses is a number of not deleted keys", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		cache_hits_total:          prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_hits_total", "Cache - Hits is a number of successfully found keys", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name}),
+		cache_miss_total:          prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_miss_total", "Cache - Misses is a number of not found keys", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name})}
 }
 
 var queriesTotal = promauto.NewCounterVec(
@@ -118,6 +95,7 @@ var queriesTotal = promauto.NewCounterVec(
 		Namespace: "grafana_plugin",
 		Name:      "queries_total",
 		Help:      "Total number of queries.",
+		//ConstLabels: prometheus.Labels{"UID": setting.UID, "Name": setting.Name},
 	},
 	[]string{"query_type", "query_source"},
 )

@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"net/url"
 )
@@ -31,22 +32,6 @@ func NewDatasource(_ context.Context, dis backend.DataSourceInstanceSettings) (i
 	}, nil
 }
 
-// newDatasource returns datasource.ServeOpts.
-/*func newDatasource() datasource.ServeOpts {
-	// creates a instance manager for your plugin. The function passed
-	// into `NewInstanceManger` is called when the instance is created
-	// for the first time or when a datasource configuration changed.
-	im := datasource.NewInstanceManager(newDataSourceInstance)
-	ds := &SnowflakeDatasource{
-		im: im,
-	}
-
-	return datasource.ServeOpts{
-		QueryDataHandler:   ds,
-		CheckHealthHandler: ds,
-	}
-}*/
-
 type SnowflakeDatasource struct {
 	// The instance manager can help with lifecycle management
 	// of datasource instances in plugins. It's not a requirements
@@ -63,14 +48,6 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 	// create response struct
 	result := backend.NewQueryDataResponse()
 
-	/*password := req.PluginContext.DataSourceInstanceSettings.DecryptedSecureJSONData["password"]
-	privateKey := req.PluginContext.DataSourceInstanceSettings.DecryptedSecureJSONData["privateKey"]
-
-	config, err := getConfig(req.PluginContext.DataSourceInstanceSettings)
-	if err != nil {
-		log.DefaultLogger.Error("Could not get config for plugin", "err", err)
-		return response, err
-	}*/
 	i, err := td.im.Get(ctx, req.PluginContext)
 	if err != nil {
 		return nil, err
@@ -206,7 +183,7 @@ func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 	}
 
 	prom := NewLocalPrometheusCollector(db, cache, &setting)
-	//err = prometheus.DefaultRegisterer.Register(prom)
+	err = prometheus.DefaultRegisterer.Register(prom)
 	if err != nil {
 		log.DefaultLogger.Error("Failed to register prometheus", "error", err)
 	}

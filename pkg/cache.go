@@ -92,7 +92,6 @@ func getQueryFromCache(cache *bigcache.BigCache, queryConfig queryConfigStruct) 
 	if cache == nil || !queryConfig.CacheState.Use {
 		return frame, errors.New("noCache")
 	}
-	log.DefaultLogger.Info("Cache", queryConfig.CacheState.Until.Format(time.RFC3339))
 	cache_res, err := cache.Get(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339) + queryConfig.FinalQuery))
 	if err != nil {
 		return frame, err
