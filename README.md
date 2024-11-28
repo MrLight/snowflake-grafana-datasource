@@ -1,6 +1,7 @@
 # Snowflake Grafana Data Source
 
-[![Build](https://github.com/michelin/snowflake-grafana-datasource/workflows/CI/badge.svg)](https://github.com/michelin/snowflake-grafana-datasource/actions?query=workflow%3A%22CI%22)
+[![Build](https://github.com/michelin/snowflake-grafana-datasource/actions/workflows/ci.yml/badge.svg)](https://github.com/michelin/snowflake-grafana-datasource/actions/workflows/ci.yml) 
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource)[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=coverage)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource)
 
 With the Snowflake plugin, you can visualize your Snowflake data in Grafana and build awesome chart.
 
@@ -10,17 +11,21 @@ With the Snowflake plugin, you can visualize your Snowflake data in Grafana and 
 #### Install the Data Source
 
 1. Install the plugin into the grafana plugin folder:
+
+**With grafana-cli**
 ```shell
-grafana-cli --pluginUrl https://github.com/michelin/snowflake-grafana-datasource/releases/latest/download/snowflake-grafana-datasource.zip plugins install michelin-snowflake-datasource
+grafana cli --pluginUrl https://github.com/michelin/snowflake-grafana-datasource/releases/latest/download/snowflake-grafana-datasource.zip plugins install michelin-snowflake-datasource
 ```
-or
+`--pluginsDir` option can be used to specify a custom plugin directory
+
+**Manually**
 ```shell
 cd /var/lib/grafana/plugins/
 wget https://github.com/michelin/snowflake-grafana-datasource/releases/latest/download/snowflake-grafana-datasource.zip
 unzip snowflake-grafana-datasource.zip
 ```
 
-2. Edit the grafana configuration file to allow unsigned plugins:
+2. Edit the grafana configuration file `grafana.ini` to allow unsigned plugins:
 * Linux：/etc/grafana/grafana.ini
 * macOS：/usr/local/etc/grafana/grafana.ini
 ```shell
@@ -195,6 +200,12 @@ More info about snowflake-side caching: https://docs.snowflake.com/en/user-guide
 ## Development
 
 The snowflake datasource is a data source backend plugin composed of both frontend and backend components.
+
+To build the project you must have the following tools installed:
+* Go
+* Node
+* yarn
+
 
 ### Frontend
 

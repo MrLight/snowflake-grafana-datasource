@@ -1,6 +1,20 @@
 # Changelog
 
+## 1.8.1
+
+### 🐞 Bug Fixes
+- Resolve the issue of reusing closed connections.
+
+### 🔨 Changed
+- Upgrade grafana-plugin-sdk-go to version v0.258.0.
+- Upgrade gosnowflake to version v1.12.0.
+- Upgrade js dependencies.
+
 ## 1.8.0
+
+### ⭐ Added
+- Add configuration for `MaxChunkDownloadWorkers` and `CustomJSONDecoderEnabled`.
+- Add `$__timeRoundFrom()` and `$__timeRoundTo()` macros
 
 ### 🐞 Bug Fixes
 - Avoid interpolation of Snowflake SYSTEM functions.
@@ -8,7 +22,13 @@
 
 ### 🔨 Changed
 - Improve unit tests coverage.
-- Upgrade grafana-plugin-sdk-go to version v0.251.0.
+- Upgrade grafana-plugin-sdk-go to version v0.255.0.
+- Upgrade go to version 1.22.
+- Upgrade js dependencies.
+
+### ❤️ Contributors
+We'd like to thank all the contributors who worked on this release!
+- [@MrLight](https://github.com/MrLight)
 
 ## 1.7.1
 

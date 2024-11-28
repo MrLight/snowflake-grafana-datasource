@@ -16,6 +16,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 
 	"net/url"
+
+	sf "github.com/snowflakedb/gosnowflake"
 )
 
 type DBDataResponse struct {
@@ -90,23 +92,25 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 }
 
 type pluginConfig struct {
-	Account               string `json:"account"`
-	Username              string `json:"username"`
-	Role                  string `json:"role"`
-	Warehouse             string `json:"warehouse"`
-	Database              string `json:"database"`
-	Schema                string `json:"schema"`
-	ExtraConfig           string `json:"extraConfig"`
-	MaxOpenConnections    string `json:"maxOpenConnections"`
-	IntMaxOpenConnections int64
-	MaxQueuedQueries      string `json:"maxQueuedQueries"`
-	IntMaxQueuedQueries   int64
-	ConnectionLifetime    string `json:"connectionLifetime"`
-	IntConnectionLifetime int64
-	UseCaching            bool   `json:"useCaching"`
-	UseCacheByDefault     bool   `json:"useCacheByDefault"`
-	CacheSize             string `json:"cacheSize"`
-	CacheRetention        string `json:"cacheRetention"`
+	Account                  string `json:"account"`
+	Username                 string `json:"username"`
+	Role                     string `json:"role"`
+	Warehouse                string `json:"warehouse"`
+	Database                 string `json:"database"`
+	Schema                   string `json:"schema"`
+	ExtraConfig              string `json:"extraConfig"`
+	MaxOpenConnections       string `json:"maxOpenConnections"`
+	IntMaxOpenConnections    int64
+	MaxQueuedQueries         string `json:"maxQueuedQueries"`
+	IntMaxQueuedQueries      int64
+	ConnectionLifetime       string `json:"connectionLifetime"`
+	IntConnectionLifetime    int64
+	UseCaching               bool   `json:"useCaching"`
+	UseCacheByDefault        bool   `json:"useCacheByDefault"`
+	CacheSize                string `json:"cacheSize"`
+	CacheRetention           string `json:"cacheRetention"`
+	MaxChunkDownloadWorkers  string `json:"maxChunkDownloadWorkers"`
+	CustomJSONDecoderEnabled bool   `json:"customJSONDecoderEnabled"`
 }
 
 func getConfig(settings *backend.DataSourceInstanceSettings) (pluginConfig, error) {
@@ -149,6 +153,15 @@ func getConnectionString(config *pluginConfig, password string, privateKey strin
 	params.Add("warehouse", config.Warehouse)
 	params.Add("database", config.Database)
 	params.Add("schema", config.Schema)
+
+	if config.MaxChunkDownloadWorkers != "" {
+		n0, err := strconv.Atoi(config.MaxChunkDownloadWorkers)
+		if err != nil {
+			log.DefaultLogger.Error("invalid value for MaxChunkDownloadWorkers: %v", config.MaxChunkDownloadWorkers)
+		}
+		sf.MaxChunkDownloadWorkers = n0
+	}
+	sf.CustomJSONDecoderEnabled = config.CustomJSONDecoderEnabled
 
 	var userPass = ""
 	if len(privateKey) != 0 {

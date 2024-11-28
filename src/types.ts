@@ -36,6 +36,8 @@ export interface SnowflakeOptions extends DataSourceJsonData {
   useCacheByDefault: boolean;
   cacheSize?: string;
   cacheRetention?: string;
+  maxChunkDownloadWorkers?: string;
+  customJSONDecoderEnabled: boolean;
 }
 
 /**

@@ -1,5 +1,5 @@
 import React, { ChangeEvent, PureComponent } from 'react';
-import { InlineField, InlineSwitch, SecretInput, Input, FieldSet } from '@grafana/ui';
+import { ControlledCollapse, InlineField, InlineSwitch, SecretInput, Input, FieldSet } from '@grafana/ui';
 import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
 import { SnowflakeOptions, SnowflakeSecureOptions } from './types';
 
@@ -64,6 +64,24 @@ export class ConfigEditor extends PureComponent<Props, State> {
     const jsonData = {
       ...options.jsonData,
       extraConfig: event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+
+  onMaxChunkDownloadWorkersChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      maxChunkDownloadWorkers: event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+
+  onCustomJSONDecoderEnabledChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      customJSONDecoderEnabled: event.target.checked,
     };
     onOptionsChange({ ...options, jsonData });
   };
@@ -433,7 +451,35 @@ export class ConfigEditor extends PureComponent<Props, State> {
             placeholder="60"
           />
         </InlineField>
+        <br/>
+      <ControlledCollapse label="Experimental">
+      <InlineField
+          labelWidth={30}
+          label="Max Chunk Download Workers"
+          tooltip="" >
+          <Input
+            type="number"
+            className="width-20"
+            onChange={this.onMaxChunkDownloadWorkersChange}
+            value={jsonData.maxChunkDownloadWorkers || '10'}
+            placeholder="60"
+          />
+        </InlineField>
+        <InlineField
+          labelWidth={30}
+          label="Enable Custom JSON Decoder"
+          tooltip="" >
+          <InlineSwitch
+                name="useCustomJsonDecoder"
+                required
+                value={jsonData.customJSONDecoderEnabled ?? false}
+                autoComplete="off"
+                onChange={this.onCustomJSONDecoderEnabledChange}
+              />
+        </InlineField>
+      </ControlledCollapse>
       </FieldSet >
+      
     )
 
   }
