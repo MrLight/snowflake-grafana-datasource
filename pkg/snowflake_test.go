@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	sf "github.com/snowflakedb/gosnowflake"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,7 +67,7 @@ func TestGetConnectionString(t *testing.T) {
 	})
 
 	config = pluginConfig{
-		Account:     "acc@ount",
+		Account:     "account", // account not escaped, can't have special chars
 		Database:    "dat@base",
 		Role:        "ro@le",
 		Schema:      "sch@ema",
@@ -76,8 +77,15 @@ func TestGetConnectionString(t *testing.T) {
 	}
 
 	t.Run("with string to escape", func(t *testing.T) {
-		connectionString := getConnectionString(&config, "pa$$s&", "")
-		require.Equal(t, "user%40name:pa$$s&@acc@ount?database=dat%40base&role=ro%40le&schema=sch%40ema&warehouse=ware%40house&conf=xxx", connectionString)
+		passwordIn := "pa$$s+&"
+		connectionString := getConnectionString(&config, passwordIn, "")
+		require.Equal(t, "user%40name:pa%24%24s%2B%26@account?database=dat%40base&role=ro%40le&schema=sch%40ema&warehouse=ware%40house&conf=xxx", connectionString)
+
+		dsnParsed, err := sf.ParseDSN(connectionString)
+		require.Nil(t, err)
+		require.Equal(t, passwordIn, dsnParsed.Password)
+		require.Equal(t, config.Account, dsnParsed.Account)
+		require.Equal(t, config.Username, dsnParsed.User)
 	})
 }
 
