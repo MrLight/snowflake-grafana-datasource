@@ -73,7 +73,7 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 			if theErr, ok := r.(error); ok {
 				queryResult.dataResponse.Error = theErr
 			} else if theErrString, ok := r.(string); ok {
-				queryResult.dataResponse.Error = fmt.Errorf(theErrString)
+				queryResult.dataResponse.Error = fmt.Errorf("%s", theErrString)
 			}
 			ch <- queryResult
 		}

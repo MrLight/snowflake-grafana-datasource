@@ -10,13 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
+	_oauth "github.com/michelin/snowflake-grafana-datasource/pkg/oauth"
+
 	"github.com/allegro/bigcache/v3"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
-	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
-	_oauth "github.com/michelin/snowflake-grafana-datasource/pkg/oauth"
+
 	"github.com/michelin/snowflake-grafana-datasource/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -82,19 +84,20 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 }
 
 type pluginConfig struct {
-	Account                  string `json:"account"`
-	Username                 string `json:"username"`
-	Role                     string `json:"role"`
-	Warehouse                string `json:"warehouse"`
-	Database                 string `json:"database"`
-	Schema                   string `json:"schema"`
-	ExtraConfig              string `json:"extraConfig"`
-	MaxChunkDownloadWorkers  string `json:"maxChunkDownloadWorkers"`
-	CustomJSONDecoderEnabled bool   `json:"customJSONDecoderEnabled"`
-	ClientId                 string `json:"clientId"`
-	TokenEndpoint            string `json:"tokenEndpoint"`
-	RedirectUrl              string `json:"redirectUrl"`
-	MaxOpenConnections       string `json:"maxOpenConnections"`
+	Account                  string   `json:"account"`
+	Username                 string   `json:"username"`
+	Role                     string   `json:"role"`
+	Warehouse                string   `json:"warehouse"`
+	Database                 string   `json:"database"`
+	Schema                   string   `json:"schema"`
+	ExtraConfig              string   `json:"extraConfig"`
+	MaxChunkDownloadWorkers  string   `json:"maxChunkDownloadWorkers"`
+	CustomJSONDecoderEnabled bool     `json:"customJSONDecoderEnabled"`
+	ClientId                 string   `json:"clientId"`
+	TokenEndpoint            string   `json:"tokenEndpoint"`
+	RedirectUrl              string   `json:"redirectUrl"`
+	Scopes                   []string `json:"scopes"`
+	MaxOpenConnections       string   `json:"maxOpenConnections"`
 	IntMaxOpenConnections    int64
 	MaxQueuedQueries         string `json:"maxQueuedQueries"`
 	IntMaxQueuedQueries      int64
@@ -188,6 +191,7 @@ func NewDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 		ClientId:      config.ClientId,
 		ClientSecret:  setting.DecryptedSecureJSONData["clientSecret"],
 		TokenEndpoint: config.TokenEndpoint,
+		Scopes:        config.Scopes,
 	}
 
 	token, err := _oauth.GetToken(oauth, false)
