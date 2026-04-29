@@ -1,6 +1,7 @@
 # Snowflake Grafana Data Source
 
-[![Build](https://github.com/michelin/snowflake-grafana-datasource/workflows/CI/badge.svg)](https://github.com/michelin/snowflake-grafana-datasource/actions?query=workflow%3A%22CI%22)
+[![Build](https://github.com/michelin/snowflake-grafana-datasource/actions/workflows/ci.yml/badge.svg)](https://github.com/michelin/snowflake-grafana-datasource/actions/workflows/ci.yml) 
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource)[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=michelin_snowflake-grafana-datasource&metric=coverage)](https://sonarcloud.io/summary/new_code?id=michelin_snowflake-grafana-datasource)
 
 With the Snowflake plugin, you can visualize your Snowflake data in Grafana and build awesome chart.
 
@@ -10,17 +11,21 @@ With the Snowflake plugin, you can visualize your Snowflake data in Grafana and 
 #### Install the Data Source
 
 1. Install the plugin into the grafana plugin folder:
+
+**With grafana-cli**
 ```shell
-grafana-cli --pluginUrl https://github.com/michelin/snowflake-grafana-datasource/releases/latest/download/snowflake-grafana-datasource.zip plugins install michelin-snowflake-datasource
+grafana cli --pluginUrl https://github.com/michelin/snowflake-grafana-datasource/releases/latest/download/snowflake-grafana-datasource.zip plugins install michelin-snowflake-datasource
 ```
-or
+`--pluginsDir` option can be used to specify a custom plugin directory
+
+**Manually**
 ```shell
 cd /var/lib/grafana/plugins/
 wget https://github.com/michelin/snowflake-grafana-datasource/releases/latest/download/snowflake-grafana-datasource.zip
 unzip snowflake-grafana-datasource.zip
 ```
 
-2. Edit the grafana configuration file to allow unsigned plugins:
+2. Edit the grafana configuration file `grafana.ini` to allow unsigned plugins:
 * Linux：/etc/grafana/grafana.ini
 * macOS：/usr/local/etc/grafana/grafana.ini
 ```shell
@@ -37,7 +42,15 @@ docker run -d \
 grafana/grafana
 ```
 
+> [!NOTE]
+> Please refer to the documentation for more details.
+https://grafana.com/docs/grafana/latest/administration/plugin-management/#allow-unsigned-plugins
+
 3. Restart grafana
+Restart the Grafana server to apply the changes:
+``` bash
+service grafana-server restart
+```
 
 #### Configure the Datasource
 
@@ -65,11 +78,11 @@ Available configuration fields are as follows:
  Extra Options (Optional) | Specifies a series of one or more parameters, in the form of `<param>=<value>`, with each parameter separated by the ampersand character (&), and no spaces anywhere in the connection string. 
  max. open Connections    | How many connections to snowflake are opened at a time. If the limit of open connections is exceeded newer queries will be cached in the queue. [default: 100]
  max. queued Queries      | Queue size of the internal query queue. If this limit is exceeded the query will be dropped and and error is thrown. Should always be higher as `max. open Connections`. 0 to disable. [default: 400] 
- Connection lifetime      | Time in minutes until unused connections are recycled. [default: 60min]
+ Connection lifetime      | Time in minutes until unnused connections are recycled. [default: 60min]
  enable Caching           | Enable the plugin internal caching system. Queries with exact the same sql-statement will be delivered out of the cache. [default: off]
  useCaching by default    | if true: Cache is used for every query. false: Cache will not be used by default. Use `$__useNoCache()` / `$__useCache()` to override on query level.
  Cache Size               | Cache Size in MB. Cache will stay in Ram only. Set with care to a value your system can handle. [default: 2048MB]
- Cache Retention Time     | Time in Minutes until the oldest entries will be dropped. If the memory limit is exceeded first old queries will be dropped earlier. [default: 60min]
+ Cache Retention Time     | Time in Minutes until the oldest entries will be dropped. If the memory limit is exceeded first old queries will be dropped earlier. [default: 60min] 
 
 #### Supported Macros
 
@@ -88,6 +101,7 @@ Macro example                                          | Description
 `$__timeGroup(dateColumn,'5m', 0)`                     | Same as above but with a fill parameter so missing points in that series will be added by grafana and 0 will be used as value.
 `$__timeGroup(dateColumn,'5m', NULL)`                  | Same as above but NULL will be used as value for missing points.
 `$__timeGroup(dateColumn,'5m', previous)`              | Same as above but the previous value in that series will be used as fill value if no value has been seen yet NULL will be used (only available in Grafana 5.3+).
+`$__timeGroup(dateColumn, interval, fill, timezone)`   | Same as above but with a timezone parameter, which will be used to convert the timestamp in dateColumn to the specified timezone before slicing.
 `$__timeGroupAlias(dateColumn,'5m')`                   | Will be replaced identical to $__timeGroup but with an added column alias `time` (only available in Grafana 5.3+).
 `$__unixEpochFilter(dateColumn)`                       | Will be replaced by a time range filter using the specified column name with times represented as Unix timestamp. For example, *dateColumn > 1494410783 AND dateColumn < 1494497183*
 `$__unixEpochNanoFilter(dateColumn)`                   | Will be replaced by a time range filter using the specified column name with times represented as nanosecond timestamp. For example, *dateColumn > 1494410783152415214 AND dateColumn < 1494497183142514872*
@@ -112,6 +126,9 @@ For Time series query:
 * A numerical column must be included.
 
 ![Query editor](img/query.png)
+
+> [!CAUTION]
+> This plugin cannot identify malicious code in queries executed on Snowflake and assumes no responsibility for their execution. As a precaution, use a ROLE with minimal privileges, configured to grant read-only access
 
 ##### Query Variables
 
@@ -150,6 +167,13 @@ SELECT column FROM table WHERE column in ${variable:regex}
 SELECT column FROM table WHERE column in (test1|test2)
 ```
 
+Add a Template Variable:<br/>
+You can use a SQL Query to define a [Template Variable](https://grafana.com/docs/grafana/latest/dashboards/variables/add-template-variables/#add-a-query-variable)<br/>
+```sql
+-- Add __text and __value columns to your query to support custom "display names"
+SELECT value_column as __value, text_column as __text FROM table 
+```
+
 ##### Layout of a query
 
 *Simple query*
@@ -185,6 +209,11 @@ GROUP BY
 Annotations allow you to overlay events on a graph.
 To create an annotation, in the dashboard settings click "Annotations", and "New".
 
+#### Oauth Configuration
+
+To use Oauth, you need to create an Oauth custom integration in your Snowflake account.<
+You can follow the steps in the [Snowflake documentation](https://docs.snowflake.com/en/user-guide/oauth-custom).
+
 ## Caching
 ### Snowflake caching
 
@@ -192,9 +221,18 @@ Snowflake caches queries with the same footprint / hash in its own query-cache. 
 To get more queries with the same hash use the two macros `$__timeRoundFrom(d)` and `$__timeRoundTo(d)` to create wider truncated timestamps. This is no problem for timeseries charts. Grafana cuts it's x-Axis to the selected dashboard time window. If a table is displayed the whole result will be presented and it could be slightly out of the time window.\
 More info about snowflake-side caching: https://docs.snowflake.com/en/user-guide/querying-persisted-results#retrieval-optimization
 
+## Supported Grafana Versions
+This plugin supports only version with [Active Support from Grafana](https://grafana.com/docs/grafana/next/upgrade-guide/when-to-upgrade/?pg=blog&plcmt=body-txt#what-to-know-about-version-support).
+
 ## Development
 
 The snowflake datasource is a data source backend plugin composed of both frontend and backend components.
+
+To build the project you must have the following tools installed:
+* Go
+* Node
+* yarn
+
 
 ### Frontend
 

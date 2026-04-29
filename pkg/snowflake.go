@@ -9,20 +9,29 @@ import (
 	"sync"
 	"time"
 
-	"github.com/allegro/bigcache/v3"
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
-	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
-	"github.com/prometheus/client_golang/prometheus"
+	"net/url"
 
 	"net/url"
+
+	"github.com/allegro/bigcache/v3"
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
+	_oauth "github.com/michelin/snowflake-grafana-datasource/pkg/oauth"
+	"github.com/prometheus/client_golang/prometheus"
+
+	sf "github.com/snowflakedb/gosnowflake"
 )
 
 type DBDataResponse struct {
 	dataResponse backend.DataResponse
 	refID        string
 }
+
+var (
+	_ backend.QueryDataHandler = (*SnowflakeDatasource)(nil)
+)
 
 // NewDatasource creates a new datasource instance.
 func NewDatasource(_ context.Context, dis backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
@@ -58,8 +67,7 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 	// Execute each query in a goroutine and wait for them to finish afterwards
 	for _, query := range req.Queries {
 		wg.Add(1)
-		go td.query(ctx, &wg, ch, instance, query)
-		//go e.executeQuery(query, &wg, ctx, ch, queryjson)
+		go td.query(ctx, &wg, ch, req, instance, query)
 	}
 
 	wg.Wait()
@@ -75,23 +83,28 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 }
 
 type pluginConfig struct {
-	Account               string `json:"account"`
-	Username              string `json:"username"`
-	Role                  string `json:"role"`
-	Warehouse             string `json:"warehouse"`
-	Database              string `json:"database"`
-	Schema                string `json:"schema"`
-	ExtraConfig           string `json:"extraConfig"`
-	MaxOpenConnections    string `json:"maxOpenConnections"`
-	IntMaxOpenConnections int64
-	MaxQueuedQueries      string `json:"maxQueuedQueries"`
-	IntMaxQueuedQueries   int64
-	ConnectionLifetime    string `json:"connectionLifetime"`
-	IntConnectionLifetime int64
-	UseCaching            bool   `json:"useCaching"`
-	UseCacheByDefault     bool   `json:"useCacheByDefault"`
-	CacheSize             string `json:"cacheSize"`
-	CacheRetention        string `json:"cacheRetention"`
+	Account                  string `json:"account"`
+	Username                 string `json:"username"`
+	Role                     string `json:"role"`
+	Warehouse                string `json:"warehouse"`
+	Database                 string `json:"database"`
+	Schema                   string `json:"schema"`
+	ExtraConfig              string `json:"extraConfig"`
+	MaxChunkDownloadWorkers  string `json:"maxChunkDownloadWorkers"`
+	CustomJSONDecoderEnabled bool   `json:"customJSONDecoderEnabled"`
+	ClientId                 string `json:"clientId"`
+	TokenEndpoint            string `json:"tokenEndpoint"`
+	RedirectUrl              string `json:"redirectUrl"`
+	MaxOpenConnections       string `json:"maxOpenConnections"`
+	IntMaxOpenConnections    int64
+	MaxQueuedQueries         string `json:"maxQueuedQueries"`
+	IntMaxQueuedQueries      int64
+	ConnectionLifetime       string `json:"connectionLifetime"`
+	IntConnectionLifetime    int64
+	UseCaching               bool   `json:"useCaching"`
+	UseCacheByDefault        bool   `json:"useCacheByDefault"`
+	CacheSize                string `json:"cacheSize"`
+	CacheRetention           string `json:"cacheRetention"`
 }
 
 func getConfig(settings *backend.DataSourceInstanceSettings) (pluginConfig, error) {
@@ -128,23 +141,34 @@ func getConfig(settings *backend.DataSourceInstanceSettings) (pluginConfig, erro
 	return config, nil
 }
 
-func getConnectionString(config *pluginConfig, password string, privateKey string) string {
+func getConnectionString(config *pluginConfig, authenticationSecret data.AuthenticationSecret) string {
 	params := url.Values{}
 	params.Add("role", config.Role)
 	params.Add("warehouse", config.Warehouse)
 	params.Add("database", config.Database)
 	params.Add("schema", config.Schema)
 
-	var userPass = ""
-	if len(privateKey) != 0 {
-		params.Add("authenticator", "SNOWFLAKE_JWT")
-		params.Add("privateKey", privateKey)
-		userPass = url.User(config.Username).String()
-	} else {
-		userPass = url.UserPassword(config.Username, password).String()
+	if config.MaxChunkDownloadWorkers != "" {
+		n0, err := strconv.Atoi(config.MaxChunkDownloadWorkers)
+		if err != nil {
+			log.DefaultLogger.Error("invalid value for MaxChunkDownloadWorkers: %v", config.MaxChunkDownloadWorkers)
+		}
+		sf.MaxChunkDownloadWorkers = n0
 	}
+	sf.CustomJSONDecoderEnabled = config.CustomJSONDecoderEnabled
 
-	return fmt.Sprintf("%s@%s?%s&%s", userPass, config.Account, params.Encode(), config.ExtraConfig)
+	var userPass = ""
+	if len(authenticationSecret.PrivateKey) != 0 {
+		params.Add("authenticator", "SNOWFLAKE_JWT")
+		params.Add("privateKey", authenticationSecret.PrivateKey)
+		userPass = url.QueryEscape(config.Username) + "@"
+	} else if len(authenticationSecret.Token) != 0 {
+		params.Add("authenticator", "oauth")
+		params.Add("token", authenticationSecret.Token)
+	} else {
+		userPass = url.QueryEscape(config.Username) + ":" + url.QueryEscape(authenticationSecret.Password) + "@"
+	}
+	return fmt.Sprintf("%s%s?%s&%s", userPass, config.Account, params.Encode(), config.ExtraConfig)
 }
 
 type instanceSettings struct {
@@ -155,20 +179,35 @@ type instanceSettings struct {
 	prom          *LocalPrometheusCollector
 }
 
-func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+func NewDataSourceInstance(ctx context.Context, setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 
 	log.DefaultLogger.Info("Creating instance")
-
+	config, err := getConfig(&setting)
 	password := setting.DecryptedSecureJSONData["password"]
 	privateKey := setting.DecryptedSecureJSONData["privateKey"]
+	oauth := _oauth.Oauth{
+		ClientId:      config.ClientId,
+		ClientSecret:  setting.DecryptedSecureJSONData["clientSecret"],
+		TokenEndpoint: config.TokenEndpoint,
+	}
 
-	config, err := getConfig(&setting)
+	token, err := _oauth.GetToken(oauth, false)
+	if err != nil {
+		return nil, err
+	}
+
+	authenticationSecret := data.AuthenticationSecret{
+		Password:   password,
+		PrivateKey: privateKey,
+		Token:      token,
+	}
+
 	if err != nil {
 		log.DefaultLogger.Error("Could not get config for plugin", "err", err)
 		return nil, err
 	}
 
-	connectionString := getConnectionString(&config, password, privateKey)
+	connectionString := getConnectionString(&config, authenticationSecret)
 	db, err := sql.Open("snowflake", connectionString)
 	if err != nil {
 		return nil, err
@@ -189,7 +228,6 @@ func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 	}
 	return &instanceSettings{db: db, config: &config, cache: cache, prom: prom}, nil
 }
-
 func (s *instanceSettings) Dispose() {
 	//check := prometheus.DefaultRegisterer.Unregister(s.prom)
 	//log.DefaultLogger.Info("Prometheus Unregister", check)
