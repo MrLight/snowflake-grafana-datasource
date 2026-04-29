@@ -2,14 +2,15 @@ package query
 
 import (
 	"fmt"
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
-	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
-	"github.com/michelin/snowflake-grafana-datasource/pkg/utils"
 	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
+	"github.com/michelin/snowflake-grafana-datasource/pkg/utils"
 )
 
 const rsIdentifier = `([_a-zA-Z0-9]+)`
@@ -114,6 +115,12 @@ func evaluateMacro(name string, args []string, configStruct *data.QueryConfigStr
 		return handleUnixEpochGroupMacro(args, configStruct, name)
 	case "__unixEpochGroupAlias":
 		return handleUnixEpochGroupAliasMacro(args, configStruct)
+	case "__useCacheUntil":
+		return handleUseCacheUntilMacro(args, configStruct, name)
+	case "__useNoCache":
+		return handleUseNoCacheMacro(configStruct)
+	case "__useCache":
+		return handleUseCacheMacro(configStruct)
 	default:
 		return "", fmt.Errorf("unknown macro %q", name)
 	}
@@ -196,14 +203,14 @@ func handleTimeGroupMacro(args []string, configStruct *data.QueryConfigStruct, n
 	if len(args) > 3 {
 		timeExpr = fmt.Sprintf("TO_TIMESTAMP_NTZ(CONVERT_TIMEZONE(%s, %s))", args[3], args[0])
 	}
-	
+
 	duration := interval.Seconds()
 	timeUnit := "SECOND"
 
-	// If the interval can be translated to weeks exactly, then use WEEK as time slice unit as it allows users to configure which day they want the graphs to be based on 
+	// If the interval can be translated to weeks exactly, then use WEEK as time slice unit as it allows users to configure which day they want the graphs to be based on
 	// as opposed to having them always start on Thursdays due to 1970-01-01 being thursday.
 	const WEEK_IN_SECONDS = 7 * 24 * 3600
-	if interval.Seconds() > 1 && int64(interval.Seconds()) % WEEK_IN_SECONDS == 0 {
+	if interval.Seconds() > 1 && int64(interval.Seconds())%WEEK_IN_SECONDS == 0 {
 		duration = interval.Seconds() / WEEK_IN_SECONDS
 		timeUnit = "WEEK"
 	}
@@ -281,4 +288,32 @@ func parseTimeSpan(args []string, name string) (int, error) {
 		return 0, fmt.Errorf("macro %v only 1 argument allowed", name)
 	}
 	return timeSpan, nil
+}
+
+func handleUseCacheUntilMacro(args []string, configStruct *data.QueryConfigStruct, name string) (string, error) {
+	timeSpan := 1
+	if len(args) == 1 && args[0] != "" {
+		if _, err := strconv.Atoi(args[0]); err == nil {
+			timeSpan, _ = strconv.Atoi(args[0])
+			configStruct.CacheState.Use = true
+			if configStruct.TimeRange.To.UTC().Add(time.Minute*time.Duration(timeSpan)).Truncate(time.Minute*time.Duration(timeSpan)).Unix() > time.Now().Unix() {
+				configStruct.CacheState.Until = configStruct.TimeRange.To.UTC().Add(time.Minute * time.Duration(timeSpan)).Truncate(time.Minute * time.Duration(timeSpan))
+			}
+			return "", nil
+		} else {
+			return "", fmt.Errorf("macro %v 1. Argument must be a integer", name)
+		}
+	} else {
+		return "", fmt.Errorf("macro %v needs one Argument - Trunc time i Minutes", name)
+	}
+	return "", nil
+}
+
+func handleUseNoCacheMacro(configStruct *data.QueryConfigStruct) (string, error) {
+	configStruct.CacheState.Use = false
+	return "", nil
+}
+func handleUseCacheMacro(configStruct *data.QueryConfigStruct) (string, error) {
+	configStruct.CacheState.Use = true
+	return "", nil
 }

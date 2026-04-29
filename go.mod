@@ -6,11 +6,12 @@ toolchain go1.23.6
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
+	github.com/allegro/bigcache/v3 v3.1.0
 	github.com/grafana/grafana-plugin-sdk-go v0.266.0
+	github.com/prometheus/client_golang v1.20.5
 	github.com/snowflakedb/gosnowflake v1.13.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/oauth2 v0.26.0
-	github.com/allegro/bigcache/v3 v3.1.0
 )
 
 require (
@@ -21,7 +22,8 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.0.0 // indirect
 	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/JohnCGriffin/overflow v0.0.0-20211019200055-46fa312c352c // indirect
-	github.com/apache/arrow/go/v15 v15.0.2 // indirect
+	github.com/apache/arrow-go/v18 v18.0.1-0.20241212180703-82be143d7c30 // indirect
+	github.com/apache/arrow/go/v16 v16.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.26.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.11 // indirect
@@ -94,7 +96,6 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.20.5 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

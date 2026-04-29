@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"database/sql"
@@ -90,7 +90,7 @@ func NewLocalPrometheusCollector(db *sql.DB, cache *bigcache.BigCache, setting *
 		cache_miss_total:          prometheus.NewDesc("grafana_plugin_"+prom_name+"_cache_miss_total", "Cache - Misses is a number of not found keys", nil, prometheus.Labels{"UID": setting.UID, "Name": setting.Name})}
 }
 
-var queriesTotal = promauto.NewCounterVec(
+var QueriesTotal = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Namespace: "grafana_plugin",
 		Name:      "queries_total",

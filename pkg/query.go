@@ -101,7 +101,7 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 			MaxDataPoints: dataQuery.MaxDataPoints,
 			DashboardId:   request.GetHTTPHeader("X-Dashboard-Uid"),
 			PanelId:       request.GetHTTPHeader("X-Panel-Id"),
-			CacheState:    cacheState{Use: instance.config.UseCacheByDefault, Until: time.Unix(0, 0)},
+			CacheState:    _data.CacheState{Use: instance.config.UseCacheByDefault, Until: time.Unix(0, 0)},
 		},
 		intMaxQueuedQueries: instance.config.IntMaxQueuedQueries,
 		db:                  instance.db,
@@ -129,22 +129,22 @@ func (td *SnowflakeDatasource) query(ctx context.Context, wg *sync.WaitGroup, ch
 	queryStruct.qc.FinalQuery = strings.TrimSuffix(strings.TrimSpace(queryStruct.qc.FinalQuery), ";")
 
 	querySourceString := "cache"
-	frame, err := getQueryFromCache(instance.cache, queryConfig)
+	frame, err := getQueryFromCache(instance.cache, *queryStruct.qc)
 	if err != nil {
-		frame, err = td.queryData(ctx, queryConfig, dataQuery)
+		frame, err = td.queryData(ctx, queryStruct, dataQuery)
 		querySourceString = "server"
 		if err != nil {
-			errAppendDebug("db query error", err, queryConfig.FinalQuery)
+			errAppendDebug("db query error", err, queryStruct.qc.FinalQuery)
 			return
 		}
-		setQueryInCache(instance.cache, queryConfig, frame)
+		setQueryInCache(instance.cache, *queryStruct.qc, frame)
 	}
-	queriesTotal.WithLabelValues(queryConfig.QueryType, querySourceString).Inc()
+	utils.QueriesTotal.WithLabelValues(queryStruct.qc.QueryType, querySourceString).Inc()
 	queryResult.dataResponse.Frames = data.Frames{frame}
 	ch <- queryResult
 }
 
-func (td *SnowflakeDatasource) queryData(ctx context.Context, queryConfig queryConfigStruct, dataQuery backend.DataQuery) (*data.Frame, error) {
+func (td *SnowflakeDatasource) queryData(ctx context.Context, queryStruct QueryStruct, dataQuery backend.DataQuery) (*data.Frame, error) {
 
 	frame := data.NewFrame("")
 	dataResponse, err := queryStruct.fetchData(ctx)
@@ -219,7 +219,6 @@ func (td *SnowflakeDatasource) queryData(ctx context.Context, queryConfig queryC
 		ExecutedQueryString: queryStruct.qc.FinalQuery,
 	}
 
-	queryResult.dataResponse.Frames = data.Frames{frame}
 	return frame, err
 }
 

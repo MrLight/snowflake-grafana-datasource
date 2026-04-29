@@ -5,20 +5,19 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
 
-	"net/url"
-
-	"net/url"
-
 	"github.com/allegro/bigcache/v3"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
+	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
 	_oauth "github.com/michelin/snowflake-grafana-datasource/pkg/oauth"
+	"github.com/michelin/snowflake-grafana-datasource/pkg/utils"
 	"github.com/prometheus/client_golang/prometheus"
 
 	sf "github.com/snowflakedb/gosnowflake"
@@ -37,7 +36,7 @@ var (
 func NewDatasource(_ context.Context, dis backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 
 	return &SnowflakeDatasource{
-		im: datasource.NewInstanceManager(newDataSourceInstance),
+		im: datasource.NewInstanceManager(NewDataSourceInstance),
 	}, nil
 }
 
@@ -176,7 +175,7 @@ type instanceSettings struct {
 	cache         *bigcache.BigCache
 	config        *pluginConfig
 	actQueryCount queryCounter
-	prom          *LocalPrometheusCollector
+	prom          *utils.LocalPrometheusCollector
 }
 
 func NewDataSourceInstance(ctx context.Context, setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
@@ -221,7 +220,7 @@ func NewDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 		return nil, err
 	}
 
-	prom := NewLocalPrometheusCollector(db, cache, &setting)
+	prom := utils.NewLocalPrometheusCollector(db, cache, &setting)
 	err = prometheus.DefaultRegisterer.Register(prom)
 	if err != nil {
 		log.DefaultLogger.Error("Failed to register prometheus", "error", err)

@@ -3,6 +3,7 @@ import {
   Checkbox,
   ControlledCollapse,
   InlineField,
+  InlineSwitch,
   Input,
   RadioButtonGroup,
   SecretInput,
@@ -512,6 +513,54 @@ export class ConfigEditor extends PureComponent<Props, State> {
               placeholder="60"
           />
         </InlineField>
+
+        <br />
+        <h3 className="page-heading">local Caching configuration</h3>
+        <InlineField label="enable Caching"
+                     tooltip="Enable the Caching Backend in the Datasource. If similar sql-statements are queried thee result will be delivered out of cache."
+                     labelWidth={LABEL_WIDTH}>
+          <InlineSwitch
+            name="useCaching"
+            required
+            value={jsonData.useCaching ?? false}
+            autoComplete="off"
+            onChange={this.onUseCachingChange}
+          />
+        </InlineField>
+        <InlineField label="useCaching by default"
+                     tooltip="Always use caching for every Queries be default. No config Statement needed in the Query."
+                     labelWidth={LABEL_WIDTH}>
+          <InlineSwitch
+              name="useCacheByDefault"
+              required
+              value={jsonData.useCacheByDefault ?? false}
+              autoComplete="off"
+              onChange={this.onUseCacheByDefaultChange}
+            />
+        </InlineField>
+        <InlineField label="max CacheSize"
+                     tooltip="Size of the cache in MB. If exceed oldest queries are dropped. (default=2048)"
+                     labelWidth={LABEL_WIDTH}>
+          <Input
+            type="number"
+            width={INPUT_WIDTH}
+            onChange={this.onCacheSizeChange}
+            value={jsonData.cacheSize}
+            placeholder="2048"
+          />
+        </InlineField>
+        <InlineField label="Cache Retention"
+                     tooltip="How long a query is hold in the cache in minutes. (default=60)"
+                     labelWidth={LABEL_WIDTH}>
+          <Input
+            type="number"
+            width={INPUT_WIDTH}
+            onChange={this.onCacheRetentionChange}
+            value={jsonData.cacheRetention}
+            placeholder="60"
+          />
+        </InlineField>
+
         <br/>
         <ControlledCollapse label="Experimental">
           <InlineField label="Max Chunk Download Workers"

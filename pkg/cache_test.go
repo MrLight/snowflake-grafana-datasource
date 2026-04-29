@@ -5,6 +5,7 @@ import (
 
 	"github.com/allegro/bigcache/v3"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	_data "github.com/michelin/snowflake-grafana-datasource/pkg/data"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,13 +21,13 @@ func TestCacheCreationUseCache(t *testing.T) {
 	cache, err := newQueryCache(qc)
 	require.NoError(t, err, "", "")
 	require.Equal(t, 0, cache.Len())
-	err = setQueryInCache(cache, queryConfigStruct{FinalQuery: "Select 1;", CacheState: cacheState{Use: true}}, data.NewFrame(""))
+	err = setQueryInCache(cache, _data.QueryConfigStruct{FinalQuery: "Select 1;", CacheState: _data.CacheState{Use: true}}, data.NewFrame(""))
 	require.NoError(t, err, "", "")
 	require.Equal(t, 1, cache.Len())
-	frame, err := getQueryFromCache(cache, queryConfigStruct{FinalQuery: "Select 1;", CacheState: cacheState{Use: true}})
+	frame, err := getQueryFromCache(cache, _data.QueryConfigStruct{FinalQuery: "Select 1;", CacheState: _data.CacheState{Use: true}})
 	require.NoError(t, err, "", "")
 	require.Equal(t, data.NewFrame(""), frame)
-	frame, err = getQueryFromCache(cache, queryConfigStruct{FinalQuery: "Select 2;", CacheState: cacheState{Use: true}})
+	frame, err = getQueryFromCache(cache, _data.QueryConfigStruct{FinalQuery: "Select 2;", CacheState: _data.CacheState{Use: true}})
 	require.Error(t, err, "Entry not found")
 	require.Equal(t, data.NewFrame(""), frame)
 }

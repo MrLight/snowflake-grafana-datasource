@@ -2,8 +2,9 @@ package data
 
 import (
 	"database/sql"
-	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"time"
+
+	"github.com/grafana/grafana-plugin-sdk-go/backend"
 )
 
 type QueryResult struct {
@@ -34,6 +35,12 @@ type QueryConfigStruct struct {
 	FillValue     float64
 	DashboardId   string
 	PanelId       string
+	CacheState    CacheState
+}
+
+type CacheState struct {
+	Use   bool
+	Until time.Time
 }
 
 type QueryTagStruct struct {

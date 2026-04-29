@@ -12,12 +12,8 @@ import (
 	"github.com/allegro/bigcache/v3"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
+	_data "github.com/michelin/snowflake-grafana-datasource/pkg/data"
 )
-
-type cacheState struct {
-	Use   bool
-	Until time.Time
-}
 
 func GetMD5Hash(text string) string {
 	hash := md5.Sum([]byte(text))
@@ -87,7 +83,7 @@ func newQueryCache(config pluginConfig) (*bigcache.BigCache, error) {
 	return cache, err
 }
 
-func getQueryFromCache(cache *bigcache.BigCache, queryConfig queryConfigStruct) (*data.Frame, error) {
+func getQueryFromCache(cache *bigcache.BigCache, queryConfig _data.QueryConfigStruct) (*data.Frame, error) {
 	frame := data.NewFrame("")
 	if cache == nil || !queryConfig.CacheState.Use {
 		return frame, errors.New("noCache")
@@ -101,7 +97,7 @@ func getQueryFromCache(cache *bigcache.BigCache, queryConfig queryConfigStruct) 
 	return frame, err
 }
 
-func setQueryInCache(cache *bigcache.BigCache, queryConfig queryConfigStruct, frame *data.Frame) error {
+func setQueryInCache(cache *bigcache.BigCache, queryConfig _data.QueryConfigStruct, frame *data.Frame) error {
 	if cache == nil || !queryConfig.CacheState.Use {
 		return errors.New("noCache")
 	}
