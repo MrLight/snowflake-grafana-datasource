@@ -3,11 +3,12 @@ package utils
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
 	"github.com/snowflakedb/gosnowflake"
-	"time"
 )
 
 // AddQueryTagInfos Add Query Tag Infos to the context
@@ -36,7 +37,7 @@ func AddQueryTagInfos(ctx context.Context, qc *data.QueryConfigStruct) context.C
 	// User
 	var grafanaUser = ""
 	if pluginConfig.User != nil {
-		grafanaUser = pluginConfig.User.Login
+		grafanaUser, _ = encryptForSnowflakeRaw(pluginConfig.User.Login, qc.DashboardId)
 	}
 
 	queryTagData := data.QueryTagStruct{
@@ -49,7 +50,7 @@ func AddQueryTagInfos(ctx context.Context, qc *data.QueryConfigStruct) context.C
 		Grafana: data.QueryTagGrafanaStruct{
 			Version:      grafanaVersion,
 			Host:         grafanaHost,
-			OrgId:        pluginConfig.OrgID,
+			OrgId:        pluginConfig.Namespace,
 			User:         grafanaUser,
 			DatasourceId: grafanaDatasourceID,
 		},

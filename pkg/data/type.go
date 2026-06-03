@@ -56,7 +56,7 @@ type QueryTagStruct struct {
 type QueryTagGrafanaStruct struct {
 	Version      string `json:"version,omitempty"`
 	Host         string `json:"host,omitempty"`
-	OrgId        int64  `json:"orgId,omitempty"`
+	OrgId        string `json:"orgId,omitempty"`
 	User         string `json:"user,omitempty"`
 	DatasourceId string `json:"datasourceId,omitempty"`
 }
