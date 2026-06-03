@@ -5,9 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
+	_oauth "github.com/michelin/snowflake-grafana-datasource/pkg/oauth"
 
 	"github.com/allegro/bigcache/v3"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
@@ -15,7 +19,8 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 
-	"net/url"
+	"github.com/michelin/snowflake-grafana-datasource/pkg/utils"
+	"github.com/prometheus/client_golang/prometheus"
 
 	sf "github.com/snowflakedb/gosnowflake"
 )
@@ -25,20 +30,16 @@ type DBDataResponse struct {
 	refID        string
 }
 
-// newDatasource returns datasource.ServeOpts.
-func newDatasource() datasource.ServeOpts {
-	// creates a instance manager for your plugin. The function passed
-	// into `NewInstanceManger` is called when the instance is created
-	// for the first time or when a datasource configuration changed.
-	im := datasource.NewInstanceManager(newDataSourceInstance)
-	ds := &SnowflakeDatasource{
-		im: im,
-	}
+var (
+	_ backend.QueryDataHandler = (*SnowflakeDatasource)(nil)
+)
 
-	return datasource.ServeOpts{
-		QueryDataHandler:   ds,
-		CheckHealthHandler: ds,
-	}
+// NewDatasource creates a new datasource instance.
+func NewDatasource(_ context.Context, dis backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+
+	return &SnowflakeDatasource{
+		im: datasource.NewInstanceManager(NewDataSourceInstance),
+	}, nil
 }
 
 type SnowflakeDatasource struct {
@@ -57,14 +58,6 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 	// create response struct
 	result := backend.NewQueryDataResponse()
 
-	/*password := req.PluginContext.DataSourceInstanceSettings.DecryptedSecureJSONData["password"]
-	privateKey := req.PluginContext.DataSourceInstanceSettings.DecryptedSecureJSONData["privateKey"]
-
-	config, err := getConfig(req.PluginContext.DataSourceInstanceSettings)
-	if err != nil {
-		log.DefaultLogger.Error("Could not get config for plugin", "err", err)
-		return response, err
-	}*/
 	i, err := td.im.Get(ctx, req.PluginContext)
 	if err != nil {
 		return nil, err
@@ -75,8 +68,7 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 	// Execute each query in a goroutine and wait for them to finish afterwards
 	for _, query := range req.Queries {
 		wg.Add(1)
-		go td.query(ctx, &wg, ch, instance, query)
-		//go e.executeQuery(query, &wg, ctx, ch, queryjson)
+		go td.query(ctx, &wg, ch, req, instance, query)
 	}
 
 	wg.Wait()
@@ -92,14 +84,20 @@ func (td *SnowflakeDatasource) QueryData(ctx context.Context, req *backend.Query
 }
 
 type pluginConfig struct {
-	Account                  string `json:"account"`
-	Username                 string `json:"username"`
-	Role                     string `json:"role"`
-	Warehouse                string `json:"warehouse"`
-	Database                 string `json:"database"`
-	Schema                   string `json:"schema"`
-	ExtraConfig              string `json:"extraConfig"`
-	MaxOpenConnections       string `json:"maxOpenConnections"`
+	Account                  string   `json:"account"`
+	Username                 string   `json:"username"`
+	Role                     string   `json:"role"`
+	Warehouse                string   `json:"warehouse"`
+	Database                 string   `json:"database"`
+	Schema                   string   `json:"schema"`
+	ExtraConfig              string   `json:"extraConfig"`
+	MaxChunkDownloadWorkers  string   `json:"maxChunkDownloadWorkers"`
+	CustomJSONDecoderEnabled bool     `json:"customJSONDecoderEnabled"`
+	ClientId                 string   `json:"clientId"`
+	TokenEndpoint            string   `json:"tokenEndpoint"`
+	RedirectUrl              string   `json:"redirectUrl"`
+	Scopes                   []string `json:"scopes"`
+	MaxOpenConnections       string   `json:"maxOpenConnections"`
 	IntMaxOpenConnections    int64
 	MaxQueuedQueries         string `json:"maxQueuedQueries"`
 	IntMaxQueuedQueries      int64
@@ -109,8 +107,6 @@ type pluginConfig struct {
 	UseCacheByDefault        bool   `json:"useCacheByDefault"`
 	CacheSize                string `json:"cacheSize"`
 	CacheRetention           string `json:"cacheRetention"`
-	MaxChunkDownloadWorkers  string `json:"maxChunkDownloadWorkers"`
-	CustomJSONDecoderEnabled bool   `json:"customJSONDecoderEnabled"`
 }
 
 func getConfig(settings *backend.DataSourceInstanceSettings) (pluginConfig, error) {
@@ -147,7 +143,7 @@ func getConfig(settings *backend.DataSourceInstanceSettings) (pluginConfig, erro
 	return config, nil
 }
 
-func getConnectionString(config *pluginConfig, password string, privateKey string) string {
+func getConnectionString(config *pluginConfig, authenticationSecret data.AuthenticationSecret) string {
 	params := url.Values{}
 	params.Add("role", config.Role)
 	params.Add("warehouse", config.Warehouse)
@@ -164,15 +160,17 @@ func getConnectionString(config *pluginConfig, password string, privateKey strin
 	sf.CustomJSONDecoderEnabled = config.CustomJSONDecoderEnabled
 
 	var userPass = ""
-	if len(privateKey) != 0 {
+	if len(authenticationSecret.PrivateKey) != 0 {
 		params.Add("authenticator", "SNOWFLAKE_JWT")
-		params.Add("privateKey", privateKey)
-		userPass = url.QueryEscape(config.Username)
+		params.Add("privateKey", authenticationSecret.PrivateKey)
+		userPass = url.QueryEscape(config.Username) + "@"
+	} else if len(authenticationSecret.Token) != 0 {
+		params.Add("authenticator", "oauth")
+		params.Add("token", authenticationSecret.Token)
 	} else {
-		userPass = url.QueryEscape(config.Username) + ":" + url.QueryEscape(password)
+		userPass = url.QueryEscape(config.Username) + ":" + url.QueryEscape(authenticationSecret.Password) + "@"
 	}
-
-	return fmt.Sprintf("%s@%s?%s&%s", userPass, config.Account, params.Encode(), config.ExtraConfig)
+	return fmt.Sprintf("%s%s?%s&%s", userPass, config.Account, params.Encode(), config.ExtraConfig)
 }
 
 type instanceSettings struct {
@@ -180,21 +178,39 @@ type instanceSettings struct {
 	cache         *bigcache.BigCache
 	config        *pluginConfig
 	actQueryCount queryCounter
+	prom          *utils.LocalPrometheusCollector
 }
 
-func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
+func NewDataSourceInstance(ctx context.Context, setting backend.DataSourceInstanceSettings) (instancemgmt.Instance, error) {
 
 	log.DefaultLogger.Info("Creating instance")
+	config, err := getConfig(&setting)
 	password := setting.DecryptedSecureJSONData["password"]
 	privateKey := setting.DecryptedSecureJSONData["privateKey"]
+	oauth := _oauth.Oauth{
+		ClientId:      config.ClientId,
+		ClientSecret:  setting.DecryptedSecureJSONData["clientSecret"],
+		TokenEndpoint: config.TokenEndpoint,
+		Scopes:        config.Scopes,
+	}
 
-	config, err := getConfig(&setting)
+	token, err := _oauth.GetToken(oauth, false)
+	if err != nil {
+		return nil, err
+	}
+
+	authenticationSecret := data.AuthenticationSecret{
+		Password:   password,
+		PrivateKey: privateKey,
+		Token:      token,
+	}
+
 	if err != nil {
 		log.DefaultLogger.Error("Could not get config for plugin", "err", err)
 		return nil, err
 	}
 
-	connectionString := getConnectionString(&config, password, privateKey)
+	connectionString := getConnectionString(&config, authenticationSecret)
 	db, err := sql.Open("snowflake", connectionString)
 	if err != nil {
 		return nil, err
@@ -207,10 +223,17 @@ func newDataSourceInstance(ctx context.Context, setting backend.DataSourceInstan
 	if err != nil {
 		return nil, err
 	}
-	return &instanceSettings{db: db, config: &config, cache: cache}, nil
-}
 
+	prom := utils.NewLocalPrometheusCollector(db, cache, &setting)
+	err = prometheus.DefaultRegisterer.Register(prom)
+	if err != nil {
+		log.DefaultLogger.Error("Failed to register prometheus", "error", err)
+	}
+	return &instanceSettings{db: db, config: &config, cache: cache, prom: prom}, nil
+}
 func (s *instanceSettings) Dispose() {
+	//check := prometheus.DefaultRegisterer.Unregister(s.prom)
+	//log.DefaultLogger.Info("Prometheus Unregister", check)
 	log.DefaultLogger.Info("Disposing of instance")
 	if s.db != nil {
 		if err := s.db.Close(); err != nil {

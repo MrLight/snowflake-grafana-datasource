@@ -1,29 +1,88 @@
-import React, { ChangeEvent, PureComponent } from 'react';
-import { ControlledCollapse, InlineField, InlineSwitch, SecretInput, Input, FieldSet } from '@grafana/ui';
-import { DataSourcePluginOptionsEditorProps } from '@grafana/data';
-import { SnowflakeOptions, SnowflakeSecureOptions } from './types';
-
-
+import React, {ChangeEvent, PureComponent} from 'react';
+import {
+  Checkbox,
+  ControlledCollapse,
+  InlineField,
+  InlineSwitch,
+  Input,
+  RadioButtonGroup,
+  SecretInput,
+  SecretTextArea,
+} from '@grafana/ui';
+import {DataSourcePluginOptionsEditorProps} from '@grafana/data';
+import {SnowflakeOptions, SnowflakeSecureOptions} from './types';
 
 interface Props extends DataSourcePluginOptionsEditorProps<SnowflakeOptions> { }
 
-interface State { }
+interface State {
+  authMethod: string;
+  scopesInputValue: string;
+}
+
+const authOptions = [
+  { label: 'Password', value: 'password' },
+  { label: 'Key Pair', value: 'keyPair' },
+  { label: 'OAuth', value: 'oauth' },
+];
+
+const LABEL_WIDTH = 30
+const INPUT_WIDTH = 50
 
 export class ConfigEditor extends PureComponent<Props, State> {
-  
+
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      authMethod: this.props.options.jsonData.authMethod ?? authOptions[0].value,
+      scopesInputValue: this.props.options.jsonData.scopes?.join(', ') ?? '',
+    };
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    // Update local scopesInputValue if scopes were changed externally
+    if (prevProps.options.jsonData.scopes !== this.props.options.jsonData.scopes) {
+      this.setState({
+        scopesInputValue: this.props.options.jsonData.scopes?.join(', ') ?? '',
+      });
+    }
+  }
+
+  onAuthMethodChange = (value = 'password') => {
+    const { onOptionsChange, options } = this.props;
+    this.setState({ authMethod: value });
+    const jsonData = {
+      ...options.jsonData,
+      authMethod: value,
+    };
+
+    onOptionsChange({
+      ...options,
+      jsonData,
+      secureJsonFields: {
+        ...options.secureJsonFields,
+        password: false,
+        privateKey: false,
+        clientSecret: false,
+      },
+      secureJsonData: {
+        ...options.secureJsonData,
+        password: '',
+        privateKey: '',
+        clientSecret: '',
+      },
+    });
+  };
+
   onAccountChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { onOptionsChange, options } = this.props;
 
-    let value;
-    if (event.target.value.includes('.snowflakecomputing.com')) {
-      value = event.target.value;
-    } else {
-      value = event.target.value + '.snowflakecomputing.com';
+    let value = event.target.value.trim();
+    if (!value.includes('.snowflakecomputing.com')) {
+      value += '.snowflakecomputing.com';
     }
 
     // Sanitize value to avoid error
-    const regex = new RegExp('https?://');
-    value = value.replace(regex, '');
+    value = value.replace(/^https?:\/\//, '');
 
     const jsonData = {
       ...options.jsonData,
@@ -95,15 +154,6 @@ export class ConfigEditor extends PureComponent<Props, State> {
     onOptionsChange({ ...options, jsonData });
   };
 
-  onAuthenticationChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const { onOptionsChange, options } = this.props;
-    const jsonData = {
-      ...options.jsonData,
-      basicAuth: event.target.checked,
-    };
-    onOptionsChange({ ...options, jsonData });
-  };
-
   onSchemaChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { onOptionsChange, options } = this.props;
     const jsonData = {
@@ -119,8 +169,8 @@ export class ConfigEditor extends PureComponent<Props, State> {
     onOptionsChange({
       ...options,
       secureJsonData: {
+        ...options.secureJsonData,
         password: event.target.value,
-        privateKey: '',
       },
     });
   };
@@ -140,13 +190,27 @@ export class ConfigEditor extends PureComponent<Props, State> {
     });
   };
 
-  onPrivateKeyChange = (event: ChangeEvent<HTMLInputElement>) => {
+  onPrivateKeyChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const { onOptionsChange, options } = this.props;
+    let privateKey = event.target.value;
+
+    // If the private key is not in the correct format, try to convert it
+    if (!/^[A-Za-z0-9\-_=]+$/.test(privateKey) && privateKey !== '') {
+
+      // Remove the PEM header and footer
+      privateKey = privateKey.replaceAll(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----/g, '');
+
+      // Remove all newline and space characters
+      privateKey = privateKey.replaceAll(/\n|\r|\s/g, '');
+
+      // Replace + with - and / with _
+      privateKey = privateKey.replaceAll(/\+/g, '-').replaceAll(/\//g, '_');
+    }
     onOptionsChange({
       ...options,
       secureJsonData: {
-        privateKey: event.target.value,
-        password: '',
+        ...options.secureJsonData,
+        privateKey: privateKey,
       },
     });
   };
@@ -162,6 +226,67 @@ export class ConfigEditor extends PureComponent<Props, State> {
       secureJsonData: {
         ...options.secureJsonData,
         privateKey: '',
+      },
+    });
+  };
+
+  onClientIdChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      clientId: event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+
+  onTokenEndpointChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const jsonData = {
+      ...options.jsonData,
+      tokenEndpoint: event.target.value,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+
+  onScopesChange = (event: ChangeEvent<HTMLInputElement>) => {
+    this.setState({ scopesInputValue: event.target.value });
+  };
+
+  onScopesBlur = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    const scopesArray = event.target.value
+      .split(/,\s*/) // Split by comma and optional whitespace
+      .map(scope => scope.trim())
+      .filter(scope => scope.length > 0);
+    const jsonData = {
+      ...options.jsonData,
+      scopes: scopesArray,
+    };
+    onOptionsChange({ ...options, jsonData });
+  };
+
+  onClientSecretChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { onOptionsChange, options } = this.props;
+    onOptionsChange({
+      ...options,
+      secureJsonData: {
+        ...options.secureJsonData,
+        clientSecret: event.target.value,
+      },
+    });
+  };
+
+  onResetClientSecret = () => {
+    const { onOptionsChange, options } = this.props;
+    onOptionsChange({
+      ...options,
+      secureJsonFields: {
+        ...options.secureJsonFields,
+        clientSecret: false,
+      },
+      secureJsonData: {
+        ...options.secureJsonData,
+        clientSecret: ''
       },
     });
   };
@@ -225,262 +350,276 @@ export class ConfigEditor extends PureComponent<Props, State> {
   render() {
     const { options } = this.props;
     const { jsonData, secureJsonFields } = options;
-    const secureJsonData = (options.secureJsonData || {}) as SnowflakeSecureOptions;
+    const secureJsonData = (options.secureJsonData ?? {}) as SnowflakeSecureOptions;
+    const { authMethod } = this.state;
+
     return (
-      <FieldSet>
+      <div className="gf-form-group">
         <h3 className="page-heading">Connection</h3>
-        <InlineField
-          labelWidth={30}
-          label="Account name"
-          tooltip="All access to Snowflake is either through your account name (provided by Snowflake) or a URL that uses the following format: `xxxxx.snowflakecomputing.com`" >
+
+        <InlineField label="Account name"
+                     tooltip="All access to Snowflake is either through your account name (provided by Snowflake) or a URL that uses the following format: `xxxxx.snowflakecomputing.com`"
+                     labelWidth={LABEL_WIDTH}>
           <Input
-            placeholder="xxxxxx.snowflakecomputing.com"
-            type="string"
-            className="width-30"
-            value={jsonData.account || ''}
-            onChange={this.onAccountChange}
-          />
-        </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="Username"
-          tooltip="" >
-          <Input
-            placeholder="Username"
-            type="string"
-            className="width-20"
-            onChange={this.onUsernameChange}
-            value={jsonData.username || ''}
-          />
-        </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="basic or key pair authentication"
-          tooltip="" >
-          <InlineSwitch
-            name="keyorpairauth"
-            required
-            value={jsonData.basicAuth ?? false}
-            autoComplete="off"
-            onChange={this.onAuthenticationChange}
+              onChange={this.onAccountChange}
+              value={jsonData.account ?? ''}
+              placeholder="xxxxxx.snowflakecomputing.com"
+              width={INPUT_WIDTH}
           />
         </InlineField>
 
-        {!jsonData.basicAuth && (
-          <InlineField
-            labelWidth={30}
-            label="Password"
-            tooltip="" >
-            <SecretInput
-              type="string"
-              className="width-20"
-              placeholder="password"
-              isConfigured={(secureJsonFields && secureJsonFields.password) as boolean}
-              value={secureJsonData.password || ''}
-              onReset={this.onResetPassword}
-              onChange={this.onPasswordChange}
-            />
-          </InlineField>
-        )}
-        {jsonData.basicAuth && (
-          <InlineField
-            labelWidth={30}
-            label="Private key"
-            tooltip="The private key must be encoded in base 64 URL encoded pkcs8 (remove PEM header '----- BEGIN PRIVATE KEY -----' and '----- END PRIVATE KEY -----', remove line space and replace '+' with '-' and '/' with '_')" >
-            <SecretInput
-              type="string"
-              className="width-20"
-              placeholder="MIIB..."
-              isConfigured={(secureJsonFields && secureJsonFields.privateKey) as boolean}
-              value={secureJsonData.privateKey || ''}
-              onReset={this.onResetPrivateKey}
-              onChange={this.onPrivateKeyChange}
-            />
-          </InlineField>
-        )}
-        <InlineField
-          labelWidth={30}
-          label="Role"
-          tooltip="" >
-          <Input
-            type="string"
-            className="width-20"
-            onChange={this.onRoleChange}
-            value={jsonData.role || ''}
-            placeholder="Role"
-          />
+        <InlineField label="Authentications method"
+                     labelWidth={LABEL_WIDTH}>
+            <RadioButtonGroup
+                  options={authOptions}
+                  value={authMethod}
+                  onChange={this.onAuthMethodChange}
+              />
         </InlineField>
 
-        <br />
+        { authMethod !== 'oauth' && (
+            <InlineField label="Username"
+                         tooltip="The snowflake account username"
+                         labelWidth={LABEL_WIDTH}>
+                <Input
+                    onChange={this.onUsernameChange}
+                    value={jsonData.username ?? ''}
+                    placeholder="Username"
+                    width={INPUT_WIDTH}
+                />
+            </InlineField>
+        )}
+        {authMethod === 'password' && (
+            <InlineField label="Password"
+                         labelWidth={LABEL_WIDTH}>
+                <SecretInput
+                    isConfigured={secureJsonFields?.password}
+                    value={secureJsonData.password ?? ''}
+                    placeholder="password"
+                    width={INPUT_WIDTH}
+                    onReset={this.onResetPassword}
+                    onChange={this.onPasswordChange}
+                />
+            </InlineField>
+        )}
+        {authMethod === 'keyPair' && (
+            <InlineField label="Private key"
+                         tooltip="The private key must be encoded in base 64"
+                         labelWidth={LABEL_WIDTH}>
+                <SecretTextArea
+                    isConfigured={secureJsonFields?.privateKey}
+                    value={secureJsonData.privateKey ?? ''}
+                    placeholder="MIIB..."
+                    onReset={this.onResetPrivateKey}
+                    onChange={this.onPrivateKeyChange}
+                    cols={38}
+                    rows={5}
+                />
+            </InlineField>
+        )}
+        {authMethod === 'oauth' && (
+          <div>
+              <InlineField label="Client ID"
+                           tooltip="Oauth client ID"
+                           labelWidth={LABEL_WIDTH}>
+                  <Input
+                      value={jsonData.clientId ?? ''}
+                      width={INPUT_WIDTH}
+                      onChange={this.onClientIdChange}
+                  />
+              </InlineField>
+              <InlineField label="Client Secret"
+                           tooltip="Oauth Client Secret"
+                           labelWidth={LABEL_WIDTH}>
+                <SecretInput
+                    isConfigured={secureJsonFields?.clientSecret}
+                    value={secureJsonData.clientSecret ?? ''}
+                    width={INPUT_WIDTH}
+                    onReset={this.onResetClientSecret}
+                    onChange={this.onClientSecretChange}
+                />
+              </InlineField>
+              <InlineField label="Token endpoint"
+                           tooltip="Oauth token endpoint"
+                           labelWidth={LABEL_WIDTH}>
+                <Input
+                    value={jsonData.tokenEndpoint ?? ''}
+                    width={INPUT_WIDTH}
+                    onChange={this.onTokenEndpointChange}
+                />
+              </InlineField>
+              <InlineField label="Scopes"
+                           tooltip="Comma-separated list of OAuth scopes (e.g., session:role:ACCOUNTADMIN,refresh_token)"
+                           labelWidth={LABEL_WIDTH}>
+                <Input
+                    value={this.state.scopesInputValue}
+                    width={INPUT_WIDTH}
+                    onChange={this.onScopesChange}
+                    onBlur={this.onScopesBlur}
+                    placeholder="session:role:ACCOUNTADMIN,refresh_token"
+                />
+              </InlineField>
+          </div>
+        )}
+        <InlineField label="Role"
+                     tooltip="Global role to use for the connection. With Oauth, it's used to limit the access token to a single role that the user can consent to for the session."
+                     labelWidth={LABEL_WIDTH}>
+          <Input
+              width={INPUT_WIDTH}
+              onChange={this.onRoleChange}
+              value={jsonData.role ?? ''}
+              placeholder="Role"
+          />
+        </InlineField>
+        <br/>
         <h3 className="page-heading">Parameter configuration</h3>
-        <InlineField
-          labelWidth={30}
-          label="Warehouse"
-          tooltip="" >
+
+        <InlineField label="Warehouse"
+                     tooltip="Warehouse to use for the connection"
+                     labelWidth={LABEL_WIDTH}>
+            <Input
+                width={INPUT_WIDTH}
+                onChange={this.onWarehouseChange}
+                value={jsonData.warehouse ?? ''}
+                placeholder="Default warehouse"
+            />
+        </InlineField>
+
+        <InlineField label="Database"
+                     tooltip="Database to use for the connection"
+                     labelWidth={LABEL_WIDTH}>
+            <Input
+                width={INPUT_WIDTH}
+                onChange={this.onDatabaseChange}
+                value={jsonData.database ?? ''}
+                placeholder="Default database"
+            />
+        </InlineField>
+
+        <InlineField label="Schema"
+                     tooltip="Schema to use for the connection"
+                     labelWidth={LABEL_WIDTH}>
           <Input
-            type="string"
-            className="width-20"
-            onChange={this.onWarehouseChange}
-            value={jsonData.warehouse || ''}
-            placeholder="Default warehouse"
+              width={INPUT_WIDTH}
+              onChange={this.onSchemaChange}
+              value={jsonData.schema ?? ''}
+              placeholder="Default Schema"
           />
         </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="Database"
-          tooltip="" >
-          <Input
-            type="string"
-            className="width-20"
-            onChange={this.onDatabaseChange}
-            value={jsonData.database || ''}
-            placeholder="Default database"
-          />
-        </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="Schema"
-          tooltip="" >
-          <Input
-            type="string"
-            className="width-20"
-            onChange={this.onSchemaChange}
-            value={jsonData.schema || ''}
-            placeholder="Default Schema"
-          />
-        </InlineField>
-        <br />
+        <br/>
         <h3 className="page-heading">Session configuration</h3>
-        <InlineField
-          labelWidth={30}
-          label="Extra options"
-          tooltip="" >
+
+        <InlineField label="Extra options"
+                     tooltip="Extra connection parameters to use for the connection"
+                     labelWidth={LABEL_WIDTH}>
           <Input
-            type="string"
-            className="width-30"
-            onChange={this.onExtraOptionChange}
-            value={jsonData.extraConfig || ''}
-            placeholder="TIMESTAMP_OUTPUT_FORMAT=MM-DD-YYYY&XXXXX=yyyyy&..."
+              width={INPUT_WIDTH}
+              onChange={this.onExtraOptionChange}
+              value={jsonData.extraConfig ?? ''}
+              placeholder="TIMESTAMP_OUTPUT_FORMAT=MM-DD-YYYY&..."
           />
-        </InlineField>
+          </InlineField>
         <br />
         <h3 className="page-heading">Connection Pool configuration</h3>
-        <InlineField
-          labelWidth={30}
-          label="max. open Connections"
-          tooltip="How many connections will be opend from the datasource to snowflake (default: 100)" >
+        <InlineField label="max. open Connections"
+                     tooltip="How many connections will be opend from the datasource to snowflake (default: 100)"
+                     labelWidth={LABEL_WIDTH}>
           <Input
-            type="number"
-            className="width-20"
-            onChange={this.onMaxOpenConnectionsChange}
-            value={jsonData.maxOpenConnections}
-            placeholder="100"
+              width={INPUT_WIDTH}
+              onChange={this.onMaxOpenConnectionsChange}
+              value={jsonData.maxOpenConnections}
+              placeholder="100"
           />
         </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="max. queued Queries"
-          tooltip='How many queries will be put into the query queue. This should be higher as "max. open Connections" when more queries as set are waiting to be executed a "too many open queries" error will be thrown. (default: 400 | 0 = no limit)' >
+        <InlineField label="max. queued Queries"
+                     tooltip='How many queries will be put into the query queue. This should be higher as "max. open Connections" when more queries as set are waiting to be executed a "too many open queries" error will be thrown. (default: 400 | 0 = no limit)'
+                     labelWidth={LABEL_WIDTH}>
           <Input
-            type="number"
-            className="width-20"
-            onChange={this.onMaxQueuedQueriesChange}
-            value={jsonData.maxQueuedQueries}
-            placeholder="400"
+              width={INPUT_WIDTH}
+              onChange={this.onMaxQueuedQueriesChange}
+              value={jsonData.maxQueuedQueries}
+              placeholder="400"
           />
         </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="Connection lifetime [min]"
-          tooltip="How long open connections are hold to be reused in minutes. (default=60 | 0=never close)" >
+        <InlineField label="Connection lifetime [min]"
+                     tooltip="How long open connections are hold to be reused in minutes. (default=60 | 0=never close)"
+                     labelWidth={LABEL_WIDTH}>
           <Input
-            type="number"
-            className="width-20"
-            onChange={this.onConnectionLifetimeChange}
-            value={jsonData.connectionLifetime}
-            placeholder="60"
+              width={INPUT_WIDTH}
+              onChange={this.onConnectionLifetimeChange}
+              value={jsonData.connectionLifetime}
+              placeholder="60"
           />
         </InlineField>
+
         <br />
         <h3 className="page-heading">local Caching configuration</h3>
-        <InlineField
-          labelWidth={30}
-          label="enable Caching"
-          tooltip="Enable the Caching Backend in the Datasource. If similar sql-statements are queried thee result will be delivered out of cache." >
-            <InlineSwitch
-                name="useCaching"
-                required
-                value={jsonData.useCaching ?? false}
-                autoComplete="off"
-                onChange={this.onUseCachingChange}
-              />
-        </InlineField>
-         <InlineField
-          labelWidth={30}
-          label="useCaching by default"
-          tooltip="Always use caching for every Queries be default. No config Statement needed in the Query." >
+        <InlineField label="enable Caching"
+                     tooltip="Enable the Caching Backend in the Datasource. If similar sql-statements are queried thee result will be delivered out of cache."
+                     labelWidth={LABEL_WIDTH}>
           <InlineSwitch
-                name="useCacheByDefault"
-                required
-                value={jsonData.useCacheByDefault ?? false}
-                autoComplete="off"
-                onChange={this.onUseCacheByDefaultChange}
-              />
+            name="useCaching"
+            required
+            value={jsonData.useCaching ?? false}
+            autoComplete="off"
+            onChange={this.onUseCachingChange}
+          />
         </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="max CacheSize"
-          tooltip="Size of the cache in MB. If exceed oldest queries are dropped. (default=2048)" >
+        <InlineField label="useCaching by default"
+                     tooltip="Always use caching for every Queries be default. No config Statement needed in the Query."
+                     labelWidth={LABEL_WIDTH}>
+          <InlineSwitch
+              name="useCacheByDefault"
+              required
+              value={jsonData.useCacheByDefault ?? false}
+              autoComplete="off"
+              onChange={this.onUseCacheByDefaultChange}
+            />
+        </InlineField>
+        <InlineField label="max CacheSize"
+                     tooltip="Size of the cache in MB. If exceed oldest queries are dropped. (default=2048)"
+                     labelWidth={LABEL_WIDTH}>
           <Input
             type="number"
-            className="width-20"
+            width={INPUT_WIDTH}
             onChange={this.onCacheSizeChange}
             value={jsonData.cacheSize}
             placeholder="2048"
           />
         </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="Cache Retention"
-          tooltip="How long a query is hold in the cache in minutes. (default=60)" >
+        <InlineField label="Cache Retention"
+                     tooltip="How long a query is hold in the cache in minutes. (default=60)"
+                     labelWidth={LABEL_WIDTH}>
           <Input
             type="number"
-            className="width-20"
+            width={INPUT_WIDTH}
             onChange={this.onCacheRetentionChange}
             value={jsonData.cacheRetention}
             placeholder="60"
           />
         </InlineField>
-        <br/>
-      <ControlledCollapse label="Experimental">
-      <InlineField
-          labelWidth={30}
-          label="Max Chunk Download Workers"
-          tooltip="" >
-          <Input
-            type="number"
-            className="width-20"
-            onChange={this.onMaxChunkDownloadWorkersChange}
-            value={jsonData.maxChunkDownloadWorkers || '10'}
-            placeholder="60"
-          />
-        </InlineField>
-        <InlineField
-          labelWidth={30}
-          label="Enable Custom JSON Decoder"
-          tooltip="" >
-          <InlineSwitch
-                name="useCustomJsonDecoder"
-                required
-                value={jsonData.customJSONDecoderEnabled ?? false}
-                autoComplete="off"
-                onChange={this.onCustomJSONDecoderEnabledChange}
-              />
-        </InlineField>
-      </ControlledCollapse>
-      </FieldSet >
-      
-    )
 
+        <br/>
+        <ControlledCollapse label="Experimental">
+          <InlineField label="Max Chunk Download Workers"
+                       labelWidth={LABEL_WIDTH}>
+              <Input
+                  width={INPUT_WIDTH}
+                  onChange={this.onMaxChunkDownloadWorkersChange}
+                  value={jsonData.maxChunkDownloadWorkers ?? '10'}
+              />
+          </InlineField>
+          <br/>
+          <InlineField label="Enable Custom JSON Decoder"
+                       style={{alignItems: 'center'}}
+                       labelWidth={LABEL_WIDTH}>
+              <Checkbox
+                  value={jsonData.customJSONDecoderEnabled ?? false}
+                  onChange={this.onCustomJSONDecoderEnabledChange}
+              />
+          </InlineField>
+        </ControlledCollapse>
+      </div>
+    );
   }
 }
