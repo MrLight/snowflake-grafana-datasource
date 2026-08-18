@@ -4,7 +4,7 @@ go 1.26.2
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/allegro/bigcache/v3 v3.1.0
+	github.com/dgraph-io/ristretto/v2 v2.4.0
 	github.com/grafana/grafana-plugin-sdk-go v0.292.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/snowflakedb/gosnowflake v1.19.1
@@ -50,6 +50,7 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/dvsekhvalnov/jose2go v1.8.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect

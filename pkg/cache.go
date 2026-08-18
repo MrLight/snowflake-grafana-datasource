@@ -1,15 +1,13 @@
 package main
 
 import (
-	"context"
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
 
-	"github.com/allegro/bigcache/v3"
+	"github.com/dgraph-io/ristretto/v2"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 	"github.com/grafana/grafana-plugin-sdk-go/data"
 	_data "github.com/michelin/snowflake-grafana-datasource/pkg/data"
@@ -20,90 +18,145 @@ func GetMD5Hash(text string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func newQueryCache(config pluginConfig) (*bigcache.BigCache, error) {
+// queryCache wraps ristretto and stores frame pointers directly.
+type queryCache struct {
+	client    *ristretto.Cache[string, *data.Frame]
+	retention time.Duration
+}
+
+func (c *queryCache) Len() int64 {
+	if c == nil || c.client == nil {
+		return 0
+	}
+	return int64(c.client.Metrics.KeysAdded()) - int64(c.client.Metrics.KeysEvicted())
+}
+
+func (c *queryCache) Hits() uint64 {
+	if c == nil || c.client == nil {
+		return 0
+	}
+	return c.client.Metrics.Hits()
+}
+
+func (c *queryCache) Misses() uint64 {
+	if c == nil || c.client == nil {
+		return 0
+	}
+	return c.client.Metrics.Misses()
+}
+
+func (c *queryCache) CostUsed() int64 {
+	if c == nil || c.client == nil {
+		return 0
+	}
+	return int64(c.client.Metrics.CostAdded()) - int64(c.client.Metrics.CostEvicted())
+}
+
+func (c *queryCache) Close() {
+	if c != nil && c.client != nil {
+		c.client.Close()
+	}
+}
+
+func newQueryCache(config pluginConfig) (*queryCache, error) {
 	if !config.UseCaching {
 		return nil, nil
 	}
-	IntCacheSize := 0
-	IntCacheRetention := 0
+
+	cacheSizeMB := 2048
+	cacheRetentionMin := 60
+
 	if config.CacheSize == "" {
 		config.CacheSize = "2048"
 	}
 	if config.CacheRetention == "" {
 		config.CacheRetention = "60"
 	}
-	if CacheSize, err := strconv.Atoi(config.CacheSize); err == nil {
-		IntCacheSize = int(CacheSize)
+
+	if v, err := strconv.Atoi(config.CacheSize); err == nil {
+		cacheSizeMB = v
 	} else {
 		return nil, err
 	}
-	if CacheRetention, err := strconv.Atoi(config.CacheRetention); err == nil {
-		IntCacheRetention = int(CacheRetention)
+	if v, err := strconv.Atoi(config.CacheRetention); err == nil {
+		cacheRetentionMin = v
 	} else {
 		return nil, err
 	}
-	cache_config := bigcache.Config{
-		// number of shards (must be a power of 2)
-		Shards: 1024,
 
-		// time after which entry can be evicted
-		LifeWindow: time.Duration(IntCacheRetention) * time.Minute,
+	// MaxCost is the hard memory limit in bytes.
+	maxCost := int64(cacheSizeMB) * 1024 * 1024
 
-		// Interval between removing expired entries (clean up).
-		// If set to <= 0 then no action is performed.
-		// Setting to < 1 second is counterproductive — bigcache has a one second resolution.
-		CleanWindow: 5 * time.Minute,
-
-		// rps * lifeWindow, used only in initial memory allocation
-		MaxEntriesInWindow: 1000 * 10 * 60,
-
-		// max entry size in bytes, used only in initial memory allocation
-		MaxEntrySize: 500,
-
-		// prints information about additional memory allocation
-		Verbose: true,
-
-		// cache will not allocate more memory than this limit, value in MB
-		// if value is reached then the oldest entries can be overridden for the new ones
-		// 0 value means no size limit
-		HardMaxCacheSize: IntCacheSize,
-
-		// callback fired when the oldest entry is removed because of its expiration time or no space left
-		// for the new entry, or because delete was called. A bitmask representing the reason will be returned.
-		// Default value is nil which means no callback and it prevents from unwrapping the oldest entry.
-		OnRemove: nil,
-
-		// OnRemoveWithReason is a callback fired when the oldest entry is removed because of its expiration time or no space left
-		// for the new entry, or because delete was called. A constant representing the reason will be passed through.
-		// Default value is nil which means no callback and it prevents from unwrapping the oldest entry.
-		// Ignored if OnRemove is specified.
-		OnRemoveWithReason: nil,
+	rc, err := ristretto.NewCache(&ristretto.Config[string, *data.Frame]{
+		NumCounters: 1e6,     // ~10× expected number of cached items
+		MaxCost:     maxCost, // hard memory limit in bytes
+		BufferItems: 64,      // recommended default
+		Metrics:     true,
+	})
+	if err != nil {
+		return nil, err
 	}
-	cache, err := bigcache.New(context.Background(), cache_config)
-	return cache, err
+
+	return &queryCache{
+		client:    rc,
+		retention: time.Duration(cacheRetentionMin) * time.Minute,
+	}, nil
 }
 
-func getQueryFromCache(cache *bigcache.BigCache, queryConfig _data.QueryConfigStruct) (*data.Frame, error) {
-	frame := data.NewFrame("")
+func getQueryFromCache(cache *queryCache, queryConfig _data.QueryConfigStruct) (*data.Frame, error) {
 	if cache == nil || !queryConfig.CacheState.Use {
-		return frame, errors.New("noCache")
+		return data.NewFrame(""), errors.New("noCache")
 	}
-	cache_res, err := cache.Get(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339) + queryConfig.FinalQuery))
-	if err != nil {
-		return frame, err
+	key := GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339) + queryConfig.FinalQuery)
+	frame, ok := cache.client.Get(key)
+	if !ok {
+		return data.NewFrame(""), errors.New("Entry not found")
 	}
 	log.DefaultLogger.Info("Snowflake cache hit")
-	frame.UnmarshalJSON(cache_res)
-	return frame, err
+	return frame, nil
 }
 
-func setQueryInCache(cache *bigcache.BigCache, queryConfig _data.QueryConfigStruct, frame *data.Frame) error {
+func setQueryInCache(cache *queryCache, queryConfig _data.QueryConfigStruct, frame *data.Frame) error {
 	if cache == nil || !queryConfig.CacheState.Use {
 		return errors.New("noCache")
 	}
-	json, err := json.Marshal(frame)
-	if err == nil {
-		cache.Set(GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339)+queryConfig.FinalQuery), json)
+	key := GetMD5Hash(queryConfig.CacheState.Until.Format(time.RFC3339) + queryConfig.FinalQuery)
+	cache.client.SetWithTTL(key, frame, estimateFrameCost(frame), cache.retention)
+	cache.client.Wait()
+	return nil
+}
+
+func estimateFrameCost(frame *data.Frame) int64 {
+	if frame == nil {
+		return 1
 	}
-	return err
+
+	var cost int64
+	for _, field := range frame.Fields {
+		if field == nil {
+			continue
+		}
+
+		switch field.Type() {
+		case data.FieldTypeNullableString, data.FieldTypeString:
+			for i := 0; i < field.Len(); i++ {
+				if value, ok := field.ConcreteAt(i); ok {
+					if text, ok := value.(string); ok {
+						cost += int64(len(text))
+						continue
+					}
+				}
+				cost += 16
+			}
+		case data.FieldTypeNullableTime, data.FieldTypeNullableFloat64, data.FieldTypeNullableInt64, data.FieldTypeNullableUint64, data.FieldTypeNullableBool:
+			cost += int64(field.Len()) * 8
+		default:
+			cost += int64(field.Len()) * 16
+		}
+	}
+
+	if cost <= 0 {
+		return 1
+	}
+	return cost
 }

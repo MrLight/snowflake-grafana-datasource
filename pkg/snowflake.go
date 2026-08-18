@@ -13,7 +13,6 @@ import (
 	"github.com/michelin/snowflake-grafana-datasource/pkg/data"
 	_oauth "github.com/michelin/snowflake-grafana-datasource/pkg/oauth"
 
-	"github.com/allegro/bigcache/v3"
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/datasource"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/instancemgmt"
@@ -175,7 +174,7 @@ func getConnectionString(config *pluginConfig, authenticationSecret data.Authent
 
 type instanceSettings struct {
 	db            *sql.DB
-	cache         *bigcache.BigCache
+	cache         *queryCache
 	config        *pluginConfig
 	actQueryCount queryCounter
 	prom          *utils.LocalPrometheusCollector
@@ -241,9 +240,7 @@ func (s *instanceSettings) Dispose() {
 		}
 	}
 	if s.cache != nil {
-		if err := s.cache.Close(); err != nil {
-			log.DefaultLogger.Error("Failed to dispose cache", "error", err)
-		}
+		s.cache.Close()
 	}
 	log.DefaultLogger.Debug("DB disposed")
 }
